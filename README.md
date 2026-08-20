@@ -2,6 +2,10 @@
 
 A theory-informed, self-compassionate AI system designed to support personalized behaviour change through structured interactive guides.
 
+**[Open the Behaviour Change Agent](https://behaviour-change-agent.vercel.app/)**
+
+The live application provides an interactive interface for accessing the behaviour-change guides, including Goal Setting, Action Planning & Problem Solving, Self-Monitoring, and additional support.
+
 ## Overview
 
 The **Behaviour Change Agent** is an AI-assisted behaviour-change support system designed to help users work toward healthier or more goal-directed behaviours through structured, supportive interactions.
