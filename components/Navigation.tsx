@@ -25,16 +25,11 @@ const Navigation: React.FC<NavProps> = ({
   onCreateAccount,
 }) => {
   const tabs = [
-    { id: "discover", label: "Discover", icon: "" },
-    { id: "coach", label: "Social Coach", icon: "" },
-    { id: "calendar", label: "Calendar", icon: "" },
-
-    // # mariam — new McGill Courses tab
-    { id: "courses", label: "McGill Courses", icon: "" },
-
-    { id: "profile", label: "Profile", icon: "" },
-  ];
-
+  { id: "coach", label: "Chat", icon: "" },
+  { id: "resources", label: "Resources", icon: "" },
+  { id: "calendar", label: "Calendar", icon: "" },
+  { id: "profile", label: "Profile", icon: "" },
+];
   const activeName =
     accounts.find((a) => a.id === activeAccountId)?.name || "Select account";
 
@@ -44,15 +39,15 @@ const Navigation: React.FC<NavProps> = ({
       <nav className="hidden lg:flex flex-col w-72 bg-white border-r border-slate-100 h-screen sticky top-0 p-8">
         <div className="mb-10">
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 bg-mcgill-red rounded-xl flex items-center justify-center shadow-lg shadow-red-100">
+            <div className="w-10 h-10 bg-sky-500 rounded-xl flex items-center justify-center shadow-lg shadow-red-100">
               <span className="text-white text-xl font-black">U</span>
             </div>
             <h1 className="text-xl font-black tracking-tighter text-slate-900">
-              UniLinks
+              Behaviour Change
             </h1>
           </div>
           <p className="text-[10px] uppercase tracking-[0.2em] font-bold text-slate-400 pl-1">
-            McGill Edition
+            Support Agent
           </p>
 
           {/* Account Switcher */}
@@ -76,7 +71,7 @@ const Navigation: React.FC<NavProps> = ({
 
               <button
                 onClick={onCreateAccount}
-                className="px-3 py-2 rounded-xl bg-mcgill-red text-white text-xs font-black hover:bg-red-600 transition-colors"
+                className="px-3 py-2 rounded-xl bg-sky-500 text-white text-xs font-black hover:bg-red-600 transition-colors"
                 title="Create new account"
               >
                 + New
@@ -97,7 +92,7 @@ const Navigation: React.FC<NavProps> = ({
               onClick={() => setActiveTab(tab.id)}
               className={`w-full flex items-center gap-4 px-5 py-4 rounded-2xl transition-all font-semibold text-sm ${
                 activeTab === tab.id
-                  ? "bg-mcgill-red text-white shadow-xl shadow-red-100"
+                  ? "bg-sky-500 text-white shadow-xl shadow-bg-sky-100"
                   : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
               }`}
             >
@@ -105,20 +100,6 @@ const Navigation: React.FC<NavProps> = ({
               {tab.label}
             </button>
           ))}
-        </div>
-
-        <div className="pt-8 border-t border-slate-50">
-          <div className="bg-slate-50 p-5 rounded-2xl">
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">
-              Campus Status
-            </p>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <p className="text-xs font-medium text-slate-600">
-                Active community today
-              </p>
-            </div>
-          </div>
         </div>
       </nav>
 
@@ -129,7 +110,7 @@ const Navigation: React.FC<NavProps> = ({
             key={tab.id}
             onClick={() => setActiveTab(tab.id)}
             className={`flex flex-col items-center gap-1 transition-colors ${
-              activeTab === tab.id ? "text-mcgill-red" : "text-slate-400"
+              activeTab === tab.id ? "text-sky-700" : "text-slate-400"
             }`}
           >
             <span className="text-xl">{tab.icon}</span>

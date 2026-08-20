@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from "react";
 import Navigation from "./components/Navigation";
 import DiscoverySwipe from "./components/DiscoverySwipe";
-import AICoach from "./components/AICoach";
+import BehaviourChangeChat from "./components/BehaviourChangeChat";
 import Onboarding from "./components/Onboarding";
 import Welcome from "./components/Welcome";
-import { generateRecommendations } from "./services/gemini";
 import { DiscoveryItem, DiscoveryType, CollabRequest } from "./types";
 import type { UserProfile } from "./types";
-import McGillCourses from "./components/McGillCourses";
 import Calendar from "./components/Calendar";
+import Resources from "./components/Resources";
+import { truncateSync } from "node:fs";
 
 const ACCOUNTS_KEY = "uc_accounts";
 const ACTIVE_ACCOUNT_KEY = "uc_active_account";
@@ -22,28 +22,6 @@ type Account = { id: string; name: string; createdAt: number };
 const makeAccountId = () =>
   `acc_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
-const FACULTIES = [
-  {
-    id: "science",
-    name: "Faculty of Science",
-    courses: ["BIOL 111", "CHEM 110", "PHYS 131", "MATH 140", "COMP 202"],
-  },
-  {
-    id: "arts",
-    name: "Faculty of Arts",
-    courses: ["PSYC 100", "SOCI 210", "HIST 201", "ECON 208", "POLI 244"],
-  },
-  {
-    id: "eng",
-    name: "Faculty of Engineering",
-    courses: ["ECSE 202", "FACC 100", "MECH 210", "CIVE 205", "COMP 250"],
-  },
-  {
-    id: "mgmt",
-    name: "Desautels Management",
-    courses: ["MGCR 211", "MGCR 222", "MGCR 341", "FINE 342", "ORGB 321"],
-  },
-];
 
 const COLLAB_GOALS = [
   "Looking for a lab partner?",
@@ -60,9 +38,9 @@ const CREATE_TYPES = [
 ] as const;
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState("discover");
+  const [activeTab, setActiveTab] = useState("coach");
 
-  const [showWelcome, setShowWelcome] = useState(true);
+  const [showWelcome, setShowWelcome] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
 
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -70,6 +48,8 @@ const App: React.FC = () => {
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+
+  const [activityInput, setActivityInput] = useState("");
 
   const [newReqType, setNewReqType] = useState<DiscoveryType>(
     DiscoveryType.COLLAB_REQUEST,
@@ -190,7 +170,7 @@ const App: React.FC = () => {
         skills: ["Python", "Teamwork", "Research"],
         experience: ["Research Assistant @ McGill", "Intern @ Shopify"],
       });
-      setOnboardingComplete(false);
+      setOnboardingComplete(true);
     }
 
     setHeartedItems(h ? JSON.parse(h) : []);
@@ -396,6 +376,75 @@ const App: React.FC = () => {
   if (!onboardingComplete)
     return <Onboarding onComplete={handleOnboardingComplete} />;
 
+
+  const handleDeleteProfile = () => {
+      if (!activeAccountId) return;
+
+      const confirmed = window.confirm(
+        "Are you sure you want to delete this profile? This will remove its saved chat history and calendar activities from this device."
+      );
+
+      if (!confirmed) return;
+
+      const accountIdToDelete = activeAccountId;
+
+      // Remove this user's saved data
+      localStorage.removeItem(profileKey(accountIdToDelete));
+      localStorage.removeItem(heartsKey(accountIdToDelete));
+      localStorage.removeItem(
+        `behaviour_change_session_${accountIdToDelete}`
+      );
+      localStorage.removeItem(
+        `behaviour_change_chat_${accountIdToDelete}`
+      );
+      localStorage.removeItem(
+        `behaviour_change_activities_${accountIdToDelete}`
+      );
+
+      const remainingAccounts = accounts.filter(
+        (account) => account.id !== accountIdToDelete
+      );
+
+      if (remainingAccounts.length > 0) {
+        localStorage.setItem(
+          ACCOUNTS_KEY,
+          JSON.stringify(remainingAccounts)
+        );
+
+        const nextAccountId = remainingAccounts[0].id;
+
+        localStorage.setItem(
+          ACTIVE_ACCOUNT_KEY,
+          nextAccountId
+        );
+
+        setAccounts(remainingAccounts);
+        setActiveAccountId(nextAccountId);
+      } else {
+        const id = makeAccountId();
+
+        const newAccount: Account = {
+          id,
+          name: "New User",
+          createdAt: Date.now(),
+        };
+
+        localStorage.setItem(
+          ACCOUNTS_KEY,
+          JSON.stringify([newAccount])
+        );
+
+        localStorage.setItem(ACTIVE_ACCOUNT_KEY, id);
+
+        setAccounts([newAccount]);
+        setActiveAccountId(id);
+      }
+
+      setShowWelcome(false);
+      setOnboardingComplete(true);
+      setActiveTab("coach");
+    };
+
   const renderContent = () => {
     switch (activeTab) {
       case "discover":
@@ -421,20 +470,29 @@ const App: React.FC = () => {
           </div>
         );
       case "coach":
-        return <AICoach heartedItems={heartedItems} />;
+        return (
+          <BehaviourChangeChat
+            key={activeAccountId}
+            userId={activeAccountId!}
+          />
+        );
+      case "resources":
+        return <Resources />;
 
       case "calendar":
-        return (
-          <div className="p-6 lg:p-12 pb-32 animate-in fade-in duration-500">
-            <header className="mb-12 max-w-6xl mx-auto">
-              <span className="text-xs font-bold text-white uppercase tracking-[0.3em] mb-2 block">
-                Your Schedule
-              </span>
-              <h2 className="text-4xl lg:text-5xl font-black text-white tracking-tight">
-                Event Calendar
-              </h2>
-            </header>
+      return (
+        <div className="p-6 lg:p-12 pb-32 animate-in fade-in duration-500 bg-sky-50 min-h-screen">
+          <header className="mb-12 max-w-6xl mx-auto">
+            <span className="text-xs font-bold text-sky-600 uppercase tracking-[0.3em] mb-2 block">
+              Your Schedule
+            </span>
+            <h2 className="text-4xl lg:text-5xl font-black text-sky-950 tracking-tight">
+              Activity Calendar
+            </h2>
+          </header>
             <Calendar
+              key={activeAccountId}
+              userId={activeAccountId!}
               savedItems={heartedItems}
               allItems={collabRequests}
               onSaveItem={handleHeart}
@@ -452,290 +510,182 @@ const App: React.FC = () => {
 
       case "profile":
         return (
-          <div className="p-8 lg:p-16 pb-32 max-w-6xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div className="grid lg:grid-cols-3 gap-12">
-              <div className="bg-white rounded-[3.5rem] shadow-xl shadow-slate-100/50 p-10 border border-slate-50 text-center flex flex-col items-center h-fit sticky top-12">
-                <div className="mb-8 relative">
-                  <div className="w-32 h-32 rounded-full border-[6px] border-slate-50 shadow-2xl overflow-hidden bg-slate-100">
+          <div className="min-h-screen bg-sky-50 p-6 lg:p-12">
+            <div className="max-w-4xl mx-auto">
+              <div className="bg-sky-200 rounded-3xl p-6 mb-6 shadow-sm">
+                <h1 className="text-2xl font-bold text-sky-950">
+                  Profile
+                </h1>
+
+                <p className="text-sky-700 mt-2">
+                  Manage your personal information and Behaviour Change Agent account.
+                </p>
+              </div>
+
+              <div className="bg-white rounded-3xl shadow-lg border border-sky-100 p-8">
+                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-8">
+
+                  <div className="w-32 h-32 rounded-full overflow-hidden bg-sky-100 border-4 border-sky-200 flex-shrink-0">
                     <img
                       src={
                         userProfile.avatar?.trim()
                           ? userProfile.avatar
                           : `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(
-                              userProfile.name || "McGill Student",
+                              userProfile.name || "User"
                             )}`
                       }
                       alt="Profile"
                       className="w-full h-full object-cover"
                     />
                   </div>
-                </div>
 
-                {isEditingProfile ? (
-                  <div className="w-full space-y-4">
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase text-left mb-1 ml-2">
-                        Name
-                      </label>
-                      <input
-                        value={userProfile.name}
-                        onChange={(e) =>
-                          setUserProfile({
-                            ...userProfile,
-                            name: e.target.value,
-                          })
-                        }
-                        className="w-full p-3 bg-slate-50 rounded-xl font-bold"
-                      />
-                    </div>
+                  <div className="flex-1 w-full">
+                    {isEditingProfile ? (
+                      <div className="space-y-5">
+                        <div>
+                          <label className="block text-sm font-semibold text-sky-950 mb-2">
+                            Name
+                          </label>
 
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase text-left mb-1 ml-2">
-                        GPA
-                      </label>
-                      <input
-                        value={userProfile.gpa}
-                        onChange={(e) =>
-                          setUserProfile({
-                            ...userProfile,
-                            gpa: e.target.value,
-                          })
-                        }
-                        className="w-full p-3 bg-slate-50 rounded-xl font-bold"
-                        placeholder="e.g. 4.0"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-black text-slate-400 uppercase text-left mb-1 ml-2">
-                        Profile picture
-                      </label>
-
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={(e) =>
-                          handleAvatarFile(e.target.files?.[0] ?? null)
-                        }
-                        className="w-full p-3 bg-slate-50 rounded-xl font-bold"
-                      />
-
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setUserProfile((prev) =>
-                            prev ? { ...prev, avatar: "" } : prev,
-                          )
-                        }
-                        className="w-full mt-3 py-3 bg-white border border-slate-200 rounded-xl text-[9px] font-black text-slate-400 hover:text-mcgill-red hover:border-mcgill-red transition-all uppercase"
-                      >
-                        Remove photo
-                      </button>
-                    </div>
-
-                    <button
-                      onClick={() => setIsEditingProfile(false)}
-                      className="w-full py-4 bg-mcgill-red text-white rounded-2xl font-black uppercase text-xs shadow-lg"
-                    >
-                      Save Profile
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <h2 className="text-3xl font-black text-slate-900 tracking-tight mb-1">
-                      {userProfile.name}
-                    </h2>
-                    <p className="text-mcgill-red font-black text-sm uppercase tracking-widest mb-2">
-                      {userProfile.major}
-                    </p>
-                    <p className="text-slate-400 font-bold text-xs mb-8 italic">
-                      GPA: {userProfile.gpa}
-                    </p>
-                    <button
-                      onClick={() => setIsEditingProfile(true)}
-                      className="px-8 py-3 bg-slate-100 rounded-full text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-200 transition-all"
-                    >
-                      Edit Experience & Stats
-                    </button>
-                  </>
-                )}
-
-                <div className="mt-12 w-full space-y-8 text-left">
-                  <div>
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex justify-between items-center">
-                      Experience
-                      <button
-                        onClick={() => addArrayItem("experience")}
-                        className="text-mcgill-red font-black text-lg hover:scale-110 transition-transform"
-                      >
-                        +
-                      </button>
-                    </h4>
-                    <div className="space-y-2">
-                      {userProfile.experience.map((exp, i) => (
-                        <div key={i} className="flex gap-2">
                           <input
-                            value={exp}
-                            onChange={(e) =>
-                              toggleArrayItem("experience", i, e.target.value)
+                            value={userProfile.name}
+                            onChange={(event) =>
+                              setUserProfile({
+                                ...userProfile,
+                                name: event.target.value,
+                              })
                             }
-                            className="flex-1 p-3 bg-slate-50 rounded-xl text-xs font-medium border border-slate-100"
-                            autoFocus
+                            className="w-full border border-sky-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-300"
                           />
-                          <button
-                            onClick={() => removeArrayItem("experience", i)}
-                            className="text-slate-200 hover:text-red-500 font-bold text-lg transition-colors"
-                          >
-                            ×
-                          </button>
                         </div>
-                      ))}
-                    </div>
-                  </div>
+                        
 
-                  <div>
-                    <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex justify-between items-center">
-                      Skills
-                      <button
-                        onClick={() => addArrayItem("skills")}
-                        className="text-mcgill-red font-black text-lg hover:scale-110 transition-transform"
-                      >
-                        +
-                      </button>
-                    </h4>
-                    <div className="flex flex-wrap gap-2">
-                      {userProfile.skills.map((skill, i) => (
-                        <div key={i} className="flex items-center gap-1 group">
+                        <div>
+                          <label className="block text-sm font-semibold text-sky-950 mb-2">
+                            Preferred Activities
+                          </label>
+
                           <input
-                            value={skill}
-                            onChange={(e) =>
-                              toggleArrayItem("skills", i, e.target.value)
-                            }
-                            className="w-20 p-2 bg-slate-50 rounded-lg text-[9px] font-black border border-slate-200"
-                            autoFocus
+                            type="text"
+                            value={activityInput}
+                            onChange={(event) => setActivityInput(event.target.value)}
+                            placeholder="e.g. Walking, Swimming, Yoga"
+                            className="w-full border border-sky-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-300"
                           />
-                          <button
-                            onClick={() => removeArrayItem("skills", i)}
-                            className="text-slate-300 hover:text-red-500 font-bold opacity-0 group-hover:opacity-100 transition-all"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
 
-              <div className="lg:col-span-2 space-y-8">
-                <div className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-50">
-                  <h3 className="text-2xl font-black text-slate-900 mb-8 flex items-center gap-4">
-                    <span className="bg-mcgill-red text-white p-2 rounded-xl text-lg">
-                      ❤️
-                    </span>
-                    Saved & Hearted
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {heartedItems.length > 0 ? (
-                      heartedItems.map((item) => (
-                        <div
-                          key={item.id}
-                          className="p-6 bg-slate-50 rounded-3xl border border-slate-100 flex flex-col justify-between group relative overflow-hidden"
-                        >
-                          <div className="mb-4">
-                            <span className="text-[9px] font-black text-mcgill-red uppercase tracking-widest mb-1 block">
-                              {item.type}
-                            </span>
-                            <h5 className="font-bold text-slate-900">
-                              {item.title}
-                            </h5>
-                          </div>
+                          <p className="text-xs text-slate-400 mt-2">
+                            Separate activities with commas.
+                          </p>
+                        </div>
+
+
+                        <div>
+                          <label className="block text-sm font-semibold text-sky-950 mb-2">
+                            Profile Picture
+                          </label>
+
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(event) =>
+                              handleAvatarFile(event.target.files?.[0] ?? null)
+                            }
+                            className="w-full border border-sky-200 rounded-xl px-4 py-3"
+                          />
+                        </div>
+
+                        <div className="flex gap-3">
                           <button
+                            type="button"
+                            onClick={() => {
+                              setUserProfile({
+                                ...userProfile,
+                                interests: activityInput
+                                  .split(",")
+                                  .map((activity) => activity.trim())
+                                  .filter(Boolean),
+                              });
+
+                              setIsEditingProfile(false);
+                            }}
+                            className="bg-sky-500 text-white font-semibold px-5 py-3 rounded-xl hover:bg-sky-600"
+                          >
+                            Save Profile
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() =>
-                              setHeartedItems((prev) =>
-                                prev.filter((h) => h.id !== item.id),
+                              setUserProfile((previous) =>
+                                previous
+                                  ? { ...previous, avatar: "" }
+                                  : previous
                               )
                             }
-                            className="mt-4 text-[10px] font-bold text-slate-400 hover:text-red-500 transition-colors uppercase tracking-widest"
+                            className="border border-sky-200 text-sky-700 font-semibold px-5 py-3 rounded-xl hover:bg-sky-50"
                           >
-                            Unsave
+                            Remove Photo
                           </button>
                         </div>
-                      ))
-                    ) : (
-                      <div className="col-span-full py-12 text-center text-slate-400 italic">
-                        No hearted items yet. Swipe right on Discover!
                       </div>
-                    )}
-                  </div>
-                </div>
+                    ) : (
+                      <>
+                        <h2 className="text-3xl font-bold text-sky-950">
+                          {userProfile.name}
+                        </h2>
 
-                <div className="bg-white rounded-[3rem] p-10 shadow-sm border border-slate-50">
-                  <h3 className="text-2xl font-black text-slate-900 mb-8 flex items-center gap-4">
-                    <span className="bg-indigo-600 text-white p-2 rounded-xl text-lg">
-                      📡
-                    </span>
-                    Your Campus Broadcasts
-                  </h3>
+                        <div className="mt-5">
+                          <p className="text-sm font-semibold text-sky-700">
+                            User ID
+                          </p>
 
-                  <div className="space-y-4">
-                    {collabRequests.filter(
-                      (r) => r.creatorId === userProfile.id,
-                    ).length > 0 ? (
-                      collabRequests
-                        .filter((r) => r.creatorId === userProfile.id)
-                        .map((req) => (
-                          <div
-                            key={req.id}
-                            className="p-6 bg-slate-50 rounded-3xl border border-slate-100 flex items-center justify-between"
-                          >
-                            <div>
-                              <h5 className="font-bold text-slate-900 text-lg mb-1">
-                                {req.title}
-                              </h5>
-                              <p className="text-xs text-slate-500 font-bold">
-                                By {req.creatorName ?? "Unknown"}
-                              </p>
+                          <p className="text-sm text-slate-500 mt-1 break-all">
+                            {activeAccountId}
+                          </p>
+                        </div>
 
-                              <div className="flex items-center gap-4">
-                                <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">
-                                  {req.participants.length} /{" "}
-                                  {req.targetGroupSize} Interested
-                                </p>
-                                {req.participants.length > 0 && (
-                                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                                )}
-                              </div>
+                        <div className="mt-5">
+                          <p className="text-sm font-semibold text-sky-700">
+                            Preferred Activities
+                          </p>
+
+                          {userProfile.interests.length > 0 ? (
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              {userProfile.interests.map((activity) => (
+                                <span
+                                  key={activity}
+                                  className="bg-sky-100 text-sky-700 px-3 py-1 rounded-full text-sm font-medium"
+                                >
+                                  {activity}
+                                </span>
+                              ))}
                             </div>
-                            <button
-                              onClick={() =>
-                                setCollabRequests((prev) =>
-                                  prev.filter((r) => r.id !== req.id),
-                                )
-                              }
-                              className="text-slate-300 hover:text-red-500 transition-colors"
-                            >
-                              <svg
-                                className="w-6 h-6"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth="2.5"
-                                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                                ></path>
-                              </svg>
-                            </button>
-                          </div>
-                        ))
-                    ) : (
-                      <div className="py-12 text-center text-slate-400 italic font-medium">
-                        You haven't sent any broadcasts. Click the + button
-                        below to start!
-                      </div>
+                          ) : (
+                            <p className="text-sm text-slate-400 mt-1">
+                              No preferred activities added yet.
+                            </p>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActivityInput(userProfile.interests.join(", "));
+                            setIsEditingProfile(true);
+                          }}
+                          className="mt-6 bg-sky-500 text-white font-semibold px-5 py-3 rounded-xl hover:bg-sky-600"
+                        >
+                          Edit Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDeleteProfile}
+                          className="mt-3 border border-red-200 text-red-600 font-semibold px-5 py-3 rounded-xl hover:bg-red-50"
+                        >
+                          Delete Profile
+                        </button>
+
+                      </>
                     )}
                   </div>
                 </div>
@@ -757,7 +707,7 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen lg:flex bg-gradient-to-br from-[#6A0B17] via-[#B5122A] to-[#ED1B2F]">
+    <div className="min-h-screen lg:flex bg-sky-50">
       <Navigation
         activeTab={activeTab}
         setActiveTab={setActiveTab}
@@ -766,8 +716,8 @@ const App: React.FC = () => {
         setActiveAccountId={(id) => {
           setActiveAccountId(id);
           localStorage.setItem(ACTIVE_ACCOUNT_KEY, id);
-          setActiveTab("discover");
-          setShowWelcome(true);
+          setActiveTab("coach");
+          setShowWelcome(false);
         }}
         onCreateAccount={() => {
           const id = makeAccountId();
@@ -780,220 +730,14 @@ const App: React.FC = () => {
           setActiveAccountId(id);
           localStorage.setItem(ACTIVE_ACCOUNT_KEY, id);
 
-          setShowWelcome(true);
+          setShowWelcome(false);
           setOnboardingComplete(false);
-          setActiveTab("discover");
+          setActiveTab("coach");
         }}
       />
 
       <main className="flex-1 min-h-screen lg:ml-0 overflow-y-auto relative bg-transparent">
-        {renderContent()}
-
-        <button
-          onClick={() => setIsCollabModalOpen(true)}
-          className="fixed bottom-8 right-8 w-16 h-16 bg-mcgill-red text-white rounded-full shadow-[0_20px_50px_rgba(237,27,47,0.3)] flex items-center justify-center hover:scale-110 active:scale-95 transition-all z-40 group"
-        >
-          <svg
-            className="w-10 h-10 group-hover:rotate-90 transition-transform duration-500"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="3"
-              d="M12 4v16m8-8H4"
-            ></path>
-          </svg>
-          <span className="absolute right-24 bg-slate-900 text-white px-6 py-3 rounded-2xl text-xs font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none shadow-xl">
-            New Broadcast
-          </span>
-        </button>
-
-        {isCollabModalOpen && (
-          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-[110] flex items-center justify-center p-6">
-            <div className="bg-white w-full max-w-xl rounded-[4rem] p-12 lg:p-16 shadow-2xl animate-in fade-in zoom-in-95 duration-300">
-              {/* ... your existing modal code stays the same ... */}
-              {/* (No changes needed for the swipe-avatar feature) */}
-              <div className="flex justify-between items-center mb-10">
-                <div>
-                  <span className="text-xs font-black text-mcgill-red uppercase tracking-widest mb-1 block">
-                    Campus Broadcast
-                  </span>
-                  <h3 className="text-3xl font-black text-slate-900 tracking-tighter">
-                    New Collaboration
-                  </h3>
-                </div>
-                <button
-                  onClick={() => setIsCollabModalOpen(false)}
-                  className="text-slate-200 hover:text-slate-900 transition-colors"
-                >
-                  <svg
-                    className="w-10 h-10"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2.5"
-                      d="M6 18L18 6M6 6l12 12"
-                    ></path>
-                  </svg>
-                </button>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
-                  Broadcast Type
-                </label>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {CREATE_TYPES.map((t) => (
-                    <button
-                      key={t.id}
-                      type="button"
-                      onClick={() => setNewReqType(t.id)}
-                      className={`p-4 rounded-2xl text-left text-[10px] font-black transition-all border-2 ${
-                        newReqType === t.id
-                          ? "border-mcgill-red bg-red-50 text-mcgill-red shadow-md"
-                          : "border-slate-50 bg-slate-50 text-slate-500 hover:border-slate-100"
-                      }`}
-                    >
-                      {t.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* olivia */}
-
-              {/* Broadcast Name (shown for ALL types) */}
-              <div className="mt-10">
-                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
-                  Broadcast Name
-                </label>
-                <input
-                  value={newReqTitle}
-                  onChange={(e) => setNewReqTitle(e.target.value)}
-                  placeholder={
-                    newReqType === DiscoveryType.EVENT
-                      ? "e.g. Redpath Study Jam"
-                      : newReqType === DiscoveryType.CLUB
-                        ? "e.g. McGill Robotics Club"
-                        : newReqType === DiscoveryType.NETWORKING
-                          ? "e.g. Google Networking Night"
-                          : "e.g. Capstone Teammates Needed"
-                  }
-                  className="w-full p-5 bg-slate-50 border-2 border-slate-50 rounded-3xl font-bold outline-none focus:border-red-100 transition-all"
-                />
-              </div>
-
-              <div className="mt-12 space-y-10"></div>
-              {newReqType === DiscoveryType.COLLAB_REQUEST && (
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
-                    What's the goal?
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    {COLLAB_GOALS.map((g) => (
-                      <button
-                        key={g}
-                        type="button"
-                        onClick={() => setNewReqGoal(g)}
-                        className={`p-4 rounded-2xl text-left text-[10px] font-black transition-all border-2 ${
-                          newReqGoal === g
-                            ? "border-mcgill-red bg-red-50 text-mcgill-red shadow-md"
-                            : "border-slate-50 bg-slate-50 text-slate-500 hover:border-slate-100"
-                        }`}
-                      >
-                        {g}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* olivia */}
-              {needsDetails && (
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
-                    Event Description
-                  </label>
-                  <textarea
-                    value={newReqDescription}
-                    onChange={(e) => setNewReqDescription(e.target.value)}
-                    placeholder="What’s happening? Where should people meet? Anything to bring?"
-                    className="w-full p-6 bg-slate-50 border-2 border-slate-50 rounded-3xl font-bold text-base outline-none focus:border-red-100 transition-all min-h-[120px]"
-                  />
-                </div>
-              )}
-
-              {/* olivia */}
-              {needsDetails && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
-                      Date
-                    </label>
-                    <input
-                      type="date"
-                      value={eventDate}
-                      onChange={(e) => setEventDate(e.target.value)}
-                      className="w-full p-5 bg-slate-50 border-2 border-slate-50 rounded-3xl font-bold outline-none focus:border-red-100 transition-all"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
-                      Time
-                    </label>
-                    <input
-                      type="time"
-                      value={eventTime}
-                      onChange={(e) => setEventTime(e.target.value)}
-                      className="w-full p-5 bg-slate-50 border-2 border-slate-50 rounded-3xl font-bold outline-none focus:border-red-100 transition-all"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* olivia */}
-              {newReqType === DiscoveryType.COLLAB_REQUEST && (
-                <div>
-                  <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">
-                    Target Team Size
-                  </label>
-                  <div className="flex gap-4">
-                    {[2, 3, 4, 5, 6].map((n) => (
-                      <button
-                        key={n}
-                        type="button"
-                        onClick={() => setNewReqSize(n)}
-                        className={`w-14 h-14 rounded-2xl font-black text-xl transition-all ${
-                          newReqSize === n
-                            ? "bg-mcgill-red text-white shadow-xl"
-                            : "bg-slate-50 text-slate-400 hover:bg-slate-100"
-                        }`}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <button
-                onClick={submitRequest}
-                className="w-full mt-10 py-6 bg-slate-900 text-white font-black text-lg rounded-[2.5rem] shadow-2xl hover:bg-slate-800 transition-all transform active:scale-95"
-              >
-                Send Broadcast
-              </button>
-            </div>
-          </div>
-        )}
+        {renderContent()}  
       </main>
     </div>
   );

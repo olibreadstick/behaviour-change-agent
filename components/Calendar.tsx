@@ -1,26 +1,71 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { DiscoveryItem, DiscoveryType } from "../types";
 
 interface CalendarProps {
   savedItems: DiscoveryItem[];
   onSaveItem?: (item: DiscoveryItem) => void;
   allItems?: DiscoveryItem[];
+  userId: string;
 }
+
+interface PersonalActivity {
+  id: string;
+  title: string;
+  date: string;
+  time: string;
+  durationMinutes: number;
+  status: "planned" | "completed";
+}
+
+const activitiesKey = (userId: string) =>
+  `behaviour_change_activities_${userId}`;
 
 const Calendar: React.FC<CalendarProps> = ({
   savedItems,
   onSaveItem,
   allItems = [],
+  userId,
 }) => {
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 1, 7)); // Feb 7, 2026
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [activities, setActivities] = useState<PersonalActivity[]>(() => {
+    const savedActivities = localStorage.getItem(activitiesKey(userId));
+
+    if (!savedActivities) {
+      return [];
+    }
+
+    try {
+      return JSON.parse(savedActivities);
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    localStorage.setItem(
+      activitiesKey(userId),
+      JSON.stringify(activities)
+    );
+  }, [activities, userId]);
+
+  const [activityTitle, setActivityTitle] = useState("");
+  const [activityTime, setActivityTime] = useState("");
+  const [activityDuration, setActivityDuration] = useState("");
+
+  const today = new Date();
+
+  const isToday = (date: Date) =>
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate();
 
   // Get events for a specific date
   const pad = (n: number) => String(n).padStart(2, "0");
   const toDateKey = (date: Date) =>
     `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
   const toDateKeyFromString = (s?: string) => (s ? s.split("T")[0] : null);
+  
 
   const getEventsForDate = (date: Date) => {
     const key = toDateKey(date);
@@ -65,6 +110,26 @@ const Calendar: React.FC<CalendarProps> = ({
     return Array.from(types);
   };
 
+  const handleAddActivity = () => {
+    if (!selectedDate || !activityTitle.trim()) return;
+
+    const newActivity: PersonalActivity = {
+      id: `activity_${Date.now()}`,
+      title: activityTitle.trim(),
+      date: toDateKey(selectedDate),
+      time: activityTime,
+      durationMinutes: Number(activityDuration) || 0,
+      status: "planned",
+    };
+
+    setActivities((previous) => [...previous, newActivity]);
+
+    setActivityTitle("");
+    setActivityTime("");
+    setActivityDuration("");
+  };
+
+
   const handleDateClick = (date: Date) => {
     setSelectedDate(date);
     setShowModal(true);
@@ -97,6 +162,15 @@ const Calendar: React.FC<CalendarProps> = ({
       );
       const dateStr = toDateKey(date);
       const hasEvents = eventDates.has(dateStr);
+      const activitiesOnDay = activities.filter(
+        (activity) => activity.date === dateStr
+      );
+
+      const hasCompletedActivity = activities.some(
+        (activity) =>
+          activity.date === dateStr &&
+          activity.status === "completed"
+      );
       const savedEventsOnDay = getEventsForDate(date);
       const availableTypesOnDay = getEventTypesForDate(date);
 
@@ -105,14 +179,31 @@ const Calendar: React.FC<CalendarProps> = ({
           key={`day-${day}`}
           onClick={() => handleDateClick(date)}
           className={`p-4 rounded-lg relative transition-all text-center font-bold ${
-            hasEvents
-              ? "bg-mcgill-red text-white shadow-md hover:shadow-lg"
-              : "bg-slate-50 text-slate-600 hover:bg-slate-100"
-          }`}
+              isToday(date)
+                ? "bg-sky-200 text-sky-950 hover:bg-sky-300"
+                : hasEvents
+                  ? "bg-sky-500 text-white shadow-md hover:bg-sky-600"
+                  : "bg-slate-50 text-slate-600 hover:bg-sky-100"
+            }`}
         >
           <div className="text-base">{day}</div>
           {hasEvents && (
             <div className="w-1 h-1 bg-white rounded-full mx-auto mt-1"></div>
+          )}
+          {activitiesOnDay.length > 0 && (
+            <div className="flex justify-center flex-wrap gap-1 mt-1">
+              {activitiesOnDay.map((activity) => (
+                <div
+                  key={activity.id}
+                  className={`w-2 h-2 rounded-full ${
+                    activity.status === "completed"
+                      ? "bg-green-500"
+                      : "bg-sky-600"
+                  }`}
+                  title={`${activity.title} — ${activity.status}`}
+                />
+              ))}
+            </div>
           )}
           {availableTypesOnDay.length > 0 && !hasEvents && (
             <div className="w-1 h-1 bg-slate-300 rounded-full mx-auto mt-1"></div>
@@ -133,9 +224,36 @@ const Calendar: React.FC<CalendarProps> = ({
   const savedEventsOnSelectedDate = selectedDate
     ? getEventsForDate(selectedDate)
     : [];
+    const activitiesOnSelectedDate = selectedDate
+    ? activities.filter(
+        (activity) => activity.date === toDateKey(selectedDate)
+      )
+    : [];
 
   const getTypeLabel = (type: DiscoveryType) => {
     return type.replace(/_/g, " ");
+  };
+
+  const handleDeleteActivity = (activityId: string) => {
+  setActivities((previous) =>
+    previous.filter((activity) => activity.id !== activityId)
+  );
+};
+
+  const handleToggleActivityStatus = (activityId: string) => {
+    setActivities((previous) =>
+      previous.map((activity) =>
+        activity.id === activityId
+          ? {
+              ...activity,
+              status:
+                activity.status === "planned"
+                  ? "completed"
+                  : "planned",
+            }
+          : activity
+      )
+    );
   };
 
   return (
@@ -187,14 +305,20 @@ const Calendar: React.FC<CalendarProps> = ({
         <div className="grid grid-cols-7 gap-1">{renderCalendarDays()}</div>
 
         {/* Legend */}
-        <div className="mt-6 flex gap-6 text-sm">
+        <div className="mt-6 flex flex-wrap gap-6 text-sm">
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-mcgill-red"></div>
-            <span className="text-slate-700">Saved Events</span>
+            <div className="w-3 h-3 rounded-full bg-sky-600"></div>
+            <span className="text-slate-700">Planned Activity</span>
           </div>
+
           <div className="flex items-center gap-2">
-            <div className="w-4 h-4 rounded bg-slate-100"></div>
-            <span className="text-slate-700">Available Events</span>
+            <div className="w-3 h-3 rounded-full bg-green-500"></div>
+            <span className="text-slate-700">Completed Activity</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-4 rounded bg-sky-200"></div>
+            <span className="text-slate-700">Today</span>
           </div>
         </div>
       </div>
@@ -227,6 +351,103 @@ const Calendar: React.FC<CalendarProps> = ({
 
             {/* Modal Body */}
             <div className="p-6">
+                <div className="mb-6 bg-sky-50 border border-sky-100 rounded-2xl p-5">
+                  <h4 className="text-sm font-black text-sky-950 uppercase mb-4">
+                    Add Activity
+                  </h4>
+
+                  {activitiesOnSelectedDate.length > 0 && (
+                  <div className="mb-6">
+                    <h4 className="text-sm font-black text-sky-950 uppercase mb-3">
+                      Your Activities
+                    </h4>
+
+                    <div className="space-y-3">
+                      {activitiesOnSelectedDate.map((activity) => (
+                      <div
+                        key={activity.id}
+                        className="bg-sky-100 border border-sky-200 rounded-xl p-4"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <div className="font-semibold text-sky-950">
+                              {activity.title}
+                            </div>
+
+                            <div className="text-sm text-sky-700 mt-1">
+                              {activity.time && `${activity.time}`}
+                              {activity.time && activity.durationMinutes > 0 && " • "}
+                              {activity.durationMinutes > 0 &&
+                                `${activity.durationMinutes} minutes`}
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => handleToggleActivityStatus(activity.id)}
+                              className={`mt-3 px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                                activity.status === "completed"
+                                  ? "bg-green-100 text-green-700"
+                                  : "bg-sky-200 text-sky-700 hover:bg-sky-300"
+                              }`}
+                            >
+                              {activity.status === "completed"
+                                ? "✓ Completed"
+                                : "Mark as completed"}
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteActivity(activity.id)}
+                            className="text-slate-400 hover:text-red-500 transition-colors text-xl"
+                            aria-label={`Delete ${activity.title}`}
+                          >
+                            ×
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    </div>
+                  </div>
+                )}
+
+                  <div className="space-y-3">
+                    <input
+                      type="text"
+                      value={activityTitle}
+                      onChange={(event) => setActivityTitle(event.target.value)}
+                      placeholder="e.g. Walking"
+                      className="w-full border border-sky-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-300"
+                    />
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <input
+                        type="time"
+                        value={activityTime}
+                        onChange={(event) => setActivityTime(event.target.value)}
+                        className="w-full border border-sky-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-300"
+                      />
+
+                      <input
+                        type="number"
+                        min="1"
+                        value={activityDuration}
+                        onChange={(event) => setActivityDuration(event.target.value)}
+                        placeholder="Minutes"
+                        className="w-full border border-sky-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-300"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleAddActivity}
+                      disabled={!activityTitle.trim()}
+                      className="w-full bg-sky-500 text-white font-semibold py-3 rounded-xl hover:bg-sky-600 disabled:opacity-50"
+                    >
+                      Add Activity
+                    </button>
+                  </div>
+                </div>
               {/* Saved Events Section */}
               {savedEventsOnSelectedDate.length > 0 && (
                 <div className="mb-6">
