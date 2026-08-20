@@ -26,16 +26,6 @@ The system combines a **React frontend** with an **n8n agentic workflow**, struc
 
 ---
 
-## Live Application
-
-Add your deployed application link here:
-
-```text
-https://YOUR-APP.vercel.app/
-```
-
----
-
 ## System Architecture
 
 The application uses a hybrid architecture in which the LLM handles natural-language interaction while deterministic workflow components control guide progression, routing, and persistent session state.
