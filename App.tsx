@@ -8,7 +8,11 @@ import { DiscoveryItem, DiscoveryType, CollabRequest } from "./types";
 import type { UserProfile } from "./types";
 import Calendar from "./components/Calendar";
 import Resources from "./components/Resources";
+import Workshop from "./components/Workshop";
 import { truncateSync } from "node:fs";
+import AdminDashboard from "./components/AdminDashboard";
+import { logUsageEvent } from "./utils/usageTracking";
+import Home from "./components/Home";
 
 const ACCOUNTS_KEY = "uc_accounts";
 const ACTIVE_ACCOUNT_KEY = "uc_active_account";
@@ -38,7 +42,7 @@ const CREATE_TYPES = [
 ] as const;
 
 const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState("coach");
+  const [activeTab, setActiveTab] = useState("home");
 
   const [showWelcome, setShowWelcome] = useState(false);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
@@ -230,6 +234,40 @@ const App: React.FC = () => {
   useEffect(() => {
     localStorage.setItem(GLOBAL_COLLABS_KEY, JSON.stringify(collabRequests));
   }, [collabRequests]);
+
+  useEffect(() => {
+  if (!activeAccountId) return;
+
+  const sessionKey =
+    `behaviour_change_app_open_${activeAccountId}`;
+
+  if (!sessionStorage.getItem(sessionKey)) {
+    logUsageEvent(
+      activeAccountId,
+      "app_opened"
+    );
+
+    sessionStorage.setItem(
+      sessionKey,
+      "true"
+    );
+  }
+}, [activeAccountId]);
+
+useEffect(() => {
+  if (!activeAccountId) return;
+
+  // Don't count the admin dashboard as participant usage
+  if (activeTab === "admin") return;
+
+  logUsageEvent(
+    activeAccountId,
+    "page_viewed",
+    {
+      page: activeTab,
+    }
+  );
+}, [activeTab, activeAccountId]);
 
   const handleOnboardingComplete = (interests: string[], major: string) => {
     setUserProfile((prev) => (prev ? { ...prev, interests, major } : prev));
@@ -442,7 +480,7 @@ const App: React.FC = () => {
 
       setShowWelcome(false);
       setOnboardingComplete(true);
-      setActiveTab("coach");
+      setActiveTab("home");
     };
 
   const renderContent = () => {
@@ -469,6 +507,24 @@ const App: React.FC = () => {
             </div>
           </div>
         );
+
+      case "home":
+      return (
+        <Home
+          key={activeAccountId}
+          userId={activeAccountId!}
+          userName={userProfile.name}
+          setActiveTab={setActiveTab}
+        />
+      );
+
+      case "workshop":
+        return (
+          <Workshop
+            key={activeAccountId}
+            userId={activeAccountId!}
+          />
+        ); 
       case "coach":
         return (
           <BehaviourChangeChat
@@ -477,7 +533,11 @@ const App: React.FC = () => {
           />
         );
       case "resources":
-        return <Resources />;
+        return (
+          <Resources
+            userId={activeAccountId!}
+          />
+        );
 
       case "calendar":
       return (
@@ -500,13 +560,12 @@ const App: React.FC = () => {
           </div>
         );
 
-      case "courses":
+      case "admin":
         return (
-          <McGillCourses
-            userProfile={userProfile} // #mariam
-            activeAccountId={activeAccountId!} // #mariam
+          <AdminDashboard
+            accounts={accounts}
           />
-        ); // #mariam
+        );
 
       case "profile":
         return (
@@ -716,7 +775,7 @@ const App: React.FC = () => {
         setActiveAccountId={(id) => {
           setActiveAccountId(id);
           localStorage.setItem(ACTIVE_ACCOUNT_KEY, id);
-          setActiveTab("coach");
+          setActiveTab("home");
           setShowWelcome(false);
         }}
         onCreateAccount={() => {

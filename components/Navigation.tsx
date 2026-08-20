@@ -25,11 +25,14 @@ const Navigation: React.FC<NavProps> = ({
   onCreateAccount,
 }) => {
   const tabs = [
-  { id: "coach", label: "Chat", icon: "" },
-  { id: "resources", label: "Resources", icon: "" },
-  { id: "calendar", label: "Calendar", icon: "" },
-  { id: "profile", label: "Profile", icon: "" },
-];
+    { id: "home", label: "Home", icon: "" },
+    { id: "workshop", label: "Workshop", icon: "" },
+    { id: "coach", label: "Daily AI Coach", icon: "" },
+    { id: "resources", label: "Resources", icon: "" },
+    { id: "calendar", label: "Calendar", icon: "" },
+    { id: "profile", label: "Profile", icon: "" },
+    { id: "admin", label: "Admin", icon: "" },
+  ];
   const activeName =
     accounts.find((a) => a.id === activeAccountId)?.name || "Select account";
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { logUsageEvent } from "../utils/usageTracking";
 
 import { sendBehaviourChangeMessage } from "../services/behaviourChange";
 
@@ -34,7 +35,7 @@ interface SavedChatState {
 
 const INITIAL_GREETING: ChatMessage = {
   role: "assistant",
-  text: "Hi! I'm your Behaviour Change Agent.",
+  text: "Hi! I'm your Daily Coach!",
 };
 
 const MENU_MESSAGES = new Set([
@@ -44,6 +45,18 @@ const MENU_MESSAGES = new Set([
   "Self-Monitoring",
   "I need support with something else",
 ]);
+
+const BCT_RESOURCE_LINKS: Record<string, string> = {
+  "Goal Setting": "/resources/goal-setting.pdf",
+
+  "Action Planning & Problem Solving":
+    "/resources/action-planning-problem-solving.pdf",
+
+  "Self-Monitoring": "/resources/self-monitoring.pdf",
+
+  "Talking to Yourself About Physical Activity":
+    "/resources/talking-to-yourself-about-physical-activity.pdf",
+};
 
 const createConversation = (): Conversation => {
   const now = new Date().toISOString();
@@ -146,7 +159,17 @@ const BehaviourChangeChat: React.FC<BehaviourChangeChatProps> = ({
     ) ?? null;
 
   const messages = activeConversation?.messages ?? [];
-  const quickReplies = activeConversation?.quickReplies ?? [];
+  const quickReplies = [
+      ...(activeConversation?.quickReplies ?? []),
+    ].sort((a, b) => {
+      const aIsLearn = a.toLowerCase().includes("learn");
+      const bIsLearn = b.toLowerCase().includes("learn");
+
+      if (aIsLearn && !bIsLearn) return -1;
+      if (!aIsLearn && bIsLearn) return 1;
+
+      return 0;
+    });
   const started = activeConversation?.started ?? false;
 
   const updateConversationById = (
@@ -321,6 +344,53 @@ const BehaviourChangeChat: React.FC<BehaviourChangeChatProps> = ({
     setError("");
   };
 
+  const handleLearnBct = () => {
+  const selectedBctMessage = [...messages]
+    .reverse()
+    .find(
+      (message) =>
+        message.role === "user" &&
+        BCT_RESOURCE_LINKS[message.text]
+    );
+
+  if (!selectedBctMessage) {
+    setError(
+      "I couldn't determine which BCT resource to open."
+    );
+    return;
+  }
+
+  const resourceUrl =
+    BCT_RESOURCE_LINKS[selectedBctMessage.text];
+
+   logUsageEvent(
+  userId,
+  "resource_opened",
+  {
+    resource: selectedBctMessage.text,
+    source: "ai_coach",
+  }
+); 
+
+  window.open(
+    resourceUrl,
+    "_blank",
+    "noopener,noreferrer"
+  );
+};
+
+const handleQuickReply = (option: string) => {
+  const normalizedOption = option.trim().toLowerCase();
+
+  if (normalizedOption.includes("learn")) {
+    handleLearnBct();
+    return;
+  }
+
+  sendMessage(option);
+};
+
+
   const sendMessage = async (message: string) => {
     const trimmedMessage = message.trim();
 
@@ -330,6 +400,16 @@ const BehaviourChangeChat: React.FC<BehaviourChangeChatProps> = ({
       !activeConversation
     ) {
       return;
+    }
+
+    if (trimmedMessage.toLowerCase() !== "hi!") {
+      logUsageEvent(
+        userId,
+        "coach_interaction",
+        {
+          conversationId: activeConversation.id,
+        }
+      );
     }
 
     if (recognitionRef.current && isListening) {
@@ -482,12 +562,11 @@ const BehaviourChangeChat: React.FC<BehaviourChangeChatProps> = ({
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h1 className="text-2xl font-bold text-sky-950">
-                  Behaviour Change Agent
+                  Daily Coach
                 </h1>
 
                 <p className="text-sky-700 mt-1">
-                  Support for setting goals and building practical
-                  behaviour change plans.
+                  Get support with your physical activity goals whenever you need it.
                 </p>
               </div>
 
@@ -546,7 +625,7 @@ const BehaviourChangeChat: React.FC<BehaviourChangeChatProps> = ({
               {quickReplies.map((option) => (
                 <button
                   key={option}
-                  onClick={() => sendMessage(option)}
+                  onClick={() => handleQuickReply(option)}
                   disabled={loading}
                   className="border border-sky-400 text-sky-700 px-4 py-2 rounded-full hover:bg-sky-100 disabled:opacity-50"
                 >

@@ -1,4 +1,5 @@
 import React from "react";
+import { logUsageEvent } from "../utils/usageTracking";
 
 interface Resource {
   title: string;
@@ -33,7 +34,13 @@ const resources: Resource[] = [
   },
 ];
 
-const Resources: React.FC = () => {
+interface ResourcesProps {
+  userId: string;
+}
+
+const Resources: React.FC<ResourcesProps> = ({
+  userId,
+}) => {
   return (
     <div className="h-full overflow-y-auto bg-sky-50 p-6">
       <div className="max-w-5xl mx-auto">
@@ -66,6 +73,16 @@ const Resources: React.FC = () => {
                 href={resource.href}
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() =>
+                  logUsageEvent(
+                    userId,
+                    "resource_opened",
+                    {
+                      resource: resource.title,
+                      source: "resources_page",
+                    }
+                  )
+                }
                 className="mt-5 inline-flex justify-center items-center bg-sky-500 text-white font-semibold px-4 py-3 rounded-xl hover:bg-sky-600 transition-colors"
               >
                 View Resource
