@@ -21,7 +21,6 @@ public class DatabaseConfig {
     public DatabaseConfig(
             Environment environment,
             DataSourceProperties localProperties) {
-
         this.environment = environment;
         this.localProperties = localProperties;
     }
@@ -29,7 +28,6 @@ public class DatabaseConfig {
     @Bean
     @Primary
     public DataSource dataSource() {
-
         String databaseUrl = environment.getProperty("DATABASE_URL");
 
         if (databaseUrl == null || databaseUrl.isBlank()) {
@@ -39,7 +37,7 @@ public class DatabaseConfig {
                     .build();
         }
 
-        URI uri = URI.create(databaseUrl);
+        URI uri = URI.create(databaseUrl.trim());
         String rawUserInfo = uri.getRawUserInfo();
 
         if (rawUserInfo == null || !rawUserInfo.contains(":")) {
@@ -61,6 +59,7 @@ public class DatabaseConfig {
         );
 
         int port = uri.getPort() == -1 ? 5432 : uri.getPort();
+
         String databasePath = uri.getPath();
 
         if (databasePath == null || databasePath.isBlank()) {
@@ -81,13 +80,12 @@ public class DatabaseConfig {
         dataSource.setUsername(username);
         dataSource.setPassword(password);
 
-        // Do not block the Vercel cold start while Hikari performs its
-        // initial connectivity check. The first real database operation
-        // will establish a connection when needed.
-        dataSource.setInitializationFailTimeout(-1);
-        dataSource.setMinimumIdle(0);
-        dataSource.setMaximumPoolSize(4);
-        dataSource.setConnectionTimeout(5000);
+        // Render allows a normal application startup window, so let Hikari
+        // establish and validate the first connection during Spring startup.
+        dataSource.setMaximumPoolSize(5);
+        dataSource.setMinimumIdle(1);
+        dataSource.setConnectionTimeout(15000);
+        dataSource.setValidationTimeout(5000);
 
         return dataSource;
     }
