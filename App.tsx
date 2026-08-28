@@ -1,3 +1,4 @@
+import "./services/cloudPersistence";
 import React, { useState, useEffect } from "react";
 import Navigation from "./components/Navigation";
 import DiscoverySwipe from "./components/DiscoverySwipe";
