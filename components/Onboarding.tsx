@@ -2,7 +2,7 @@ import React, { useState } from "react";
 
 interface OnboardingProps {
   userId: string;
-  onComplete: (name: string) => void;
+  onComplete: (name: string) => Promise<void>;
 }
 
 const Onboarding: React.FC<OnboardingProps> = ({
@@ -11,6 +11,8 @@ const Onboarding: React.FC<OnboardingProps> = ({
 }) => {
   const [step, setStep] = useState(1);
   const [name, setName] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const handleContinue = () => {
     const trimmedName = name.trim();
@@ -19,17 +21,31 @@ const Onboarding: React.FC<OnboardingProps> = ({
       return;
     }
 
+    setSaveError("");
     setStep(2);
   };
 
-  const handleFinish = () => {
+  const handleFinish = async () => {
     const trimmedName = name.trim();
 
-    if (!trimmedName) {
+    if (!trimmedName || isSaving) {
       return;
     }
 
-    onComplete(trimmedName);
+    setSaveError("");
+    setIsSaving(true);
+
+    try {
+      await onComplete(trimmedName);
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "Unable to save your profile. Please try again."
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -222,10 +238,17 @@ const Onboarding: React.FC<OnboardingProps> = ({
               </div>
             </div>
 
+            {saveError && (
+              <div className="mt-5 bg-red-50 border border-red-100 text-red-600 text-sm rounded-xl px-4 py-3">
+                {saveError}
+              </div>
+            )}
+
             <div className="flex gap-3 mt-8">
               <button
                 type="button"
                 onClick={() => setStep(1)}
+                disabled={isSaving}
                 className="
                   flex-1
                   bg-slate-100
@@ -234,6 +257,7 @@ const Onboarding: React.FC<OnboardingProps> = ({
                   py-3.5
                   rounded-xl
                   hover:bg-slate-200
+                  disabled:opacity-50
                 "
               >
                 Back
@@ -241,7 +265,10 @@ const Onboarding: React.FC<OnboardingProps> = ({
 
               <button
                 type="button"
-                onClick={handleFinish}
+                onClick={() => {
+                  void handleFinish();
+                }}
+                disabled={isSaving}
                 className="
                   flex-[2]
                   bg-sky-500
@@ -250,9 +277,12 @@ const Onboarding: React.FC<OnboardingProps> = ({
                   py-3.5
                   rounded-xl
                   hover:bg-sky-600
+                  disabled:opacity-50
                 "
               >
-                Enter Support Agent
+                {isSaving
+                  ? "Saving..."
+                  : "Enter Support Agent"}
               </button>
             </div>
           </>

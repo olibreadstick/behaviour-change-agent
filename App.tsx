@@ -25,11 +25,16 @@ import {
   getParticipantSummary,
 } from "./services/participants";
 
+import {
+  deleteParticipantProfile,
+  getParticipantProfile,
+  saveParticipantProfile,
+} from "./services/profile";
+
 const ACCOUNTS_KEY = "uc_accounts";
 const ACTIVE_ACCOUNT_KEY = "uc_active_account";
 const GLOBAL_COLLABS_KEY = "uc_global_collabs";
 
-const profileKey = (id: string) => `uc_profile_${id}`;
 const heartsKey = (id: string) => `uc_hearted_${id}`;
 
 type Account = { id: string; name: string; createdAt: number };
@@ -153,6 +158,8 @@ const [loginError, setLoginError] =
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileNameInput, setProfileNameInput] =
   useState("");
+  const [profileSaveError, setProfileSaveError] =
+    useState("");
 
 const [
   showPenguinCustomizer,
@@ -338,65 +345,105 @@ useEffect(() => {
   useEffect(() => {
     if (!activeAccountId) return;
 
-    const p = localStorage.getItem(profileKey(activeAccountId));
-    const h = localStorage.getItem(heartsKey(activeAccountId));
-    const c = localStorage.getItem(GLOBAL_COLLABS_KEY);
+    let cancelled = false;
 
-    if (p) {
-      setUserProfile(JSON.parse(p));
-      setOnboardingComplete(true);
-    } else {
-      setUserProfile({
-        id: activeAccountId,
-        name: "New User",
-        major: "",
-        interests: [],
-        bio: "",
-        avatar: "",
-        gpa: "",
-        skills: [],
-        experience: [],
-      });
-
-      setOnboardingComplete(false);
-    }
+    const h = localStorage.getItem(
+      heartsKey(activeAccountId)
+    );
+    const c = localStorage.getItem(
+      GLOBAL_COLLABS_KEY
+    );
 
     setHeartedItems(h ? JSON.parse(h) : []);
     setCollabRequests(c ? JSON.parse(c) : []);
-  }, [activeAccountId, accounts]);
+    setUserProfile(null);
+    setProfileSaveError("");
 
-useEffect(() => {
-  if (!activeAccountId) return;
+    const loadProfile = async () => {
+      try {
+        const profile =
+          await getParticipantProfile(
+            activeAccountId
+          );
 
-  const saved = localStorage.getItem(
-    `behaviour_change_penguin_${activeAccountId}`
-  );
+        if (cancelled) return;
 
-  if (!saved) {
-    setPenguinCustomization({
-      bodyColour: "blue",
-      glassesColour: "none",
-    });
+        if (profile) {
+          setUserProfile({
+            id: activeAccountId,
+            name: profile.displayName,
+            major: "",
+            interests: [],
+            bio: "",
+            avatar: "",
+            gpa: "",
+            skills: [],
+            experience: [],
+          });
 
-    return;
-  }
+          setPenguinCustomization({
+            bodyColour:
+              profile.bodyColour as PenguinBodyColour,
+            glassesColour:
+              profile.glassesColour as GlassesColour,
+          });
 
-  try {
-    const parsed = JSON.parse(saved);
+          setOnboardingComplete(true);
+        } else {
+          setUserProfile({
+            id: activeAccountId,
+            name: "New User",
+            major: "",
+            interests: [],
+            bio: "",
+            avatar: "",
+            gpa: "",
+            skills: [],
+            experience: [],
+          });
 
-    setPenguinCustomization({
-      bodyColour:
-        parsed.bodyColour || "blue",
-      glassesColour:
-        parsed.glassesColour || "none",
-    });
-  } catch {
-    setPenguinCustomization({
-      bodyColour: "blue",
-      glassesColour: "none",
-    });
-  }
-}, [activeAccountId]);
+          setPenguinCustomization({
+            bodyColour: "blue",
+            glassesColour: "none",
+          });
+
+          setOnboardingComplete(false);
+        }
+      } catch (error) {
+        if (cancelled) return;
+
+        setUserProfile({
+          id: activeAccountId,
+          name: "New User",
+          major: "",
+          interests: [],
+          bio: "",
+          avatar: "",
+          gpa: "",
+          skills: [],
+          experience: [],
+        });
+
+        setPenguinCustomization({
+          bodyColour: "blue",
+          glassesColour: "none",
+        });
+
+        setOnboardingComplete(false);
+        setProfileSaveError(
+          error instanceof Error
+            ? error.message
+            : "Unable to load participant profile."
+        );
+      }
+    };
+
+    void loadProfile();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAccountId]);
 
 
   useEffect(() => {
@@ -413,14 +460,6 @@ useEffect(() => {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
-
-  useEffect(() => {
-    if (!activeAccountId || !userProfile) return;
-    localStorage.setItem(
-      profileKey(activeAccountId),
-      JSON.stringify(userProfile),
-    );
-  }, [activeAccountId, userProfile]);
 
   useEffect(() => {
     if (!activeAccountId) return;
@@ -468,21 +507,97 @@ useEffect(() => {
   );
 }, [activeTab, activeAccountId]);
 
-const handleOnboardingComplete = (
-    name: string
-  ) => {
-    setUserProfile((previous) =>
-      previous
-        ? {
-            ...previous,
-            name,
-          }
-        : previous
+const handleOnboardingComplete = async (
+  name: string
+) => {
+  if (!activeAccountId) {
+    throw new Error(
+      "Participant account is not available."
+    );
+  }
+
+  const savedProfile =
+    await saveParticipantProfile(
+      activeAccountId,
+      {
+        displayName: name,
+        bodyColour:
+          penguinCustomization.bodyColour,
+        glassesColour:
+          penguinCustomization.glassesColour,
+      }
     );
 
-    setOnboardingComplete(true);
-    setActiveTab("home");
-  };
+  setUserProfile((previous) =>
+    previous
+      ? {
+          ...previous,
+          name: savedProfile.displayName,
+        }
+      : {
+          id: activeAccountId,
+          name: savedProfile.displayName,
+          major: "",
+          interests: [],
+          bio: "",
+          avatar: "",
+          gpa: "",
+          skills: [],
+          experience: [],
+        }
+  );
+
+  setPenguinCustomization({
+    bodyColour:
+      savedProfile.bodyColour as PenguinBodyColour,
+    glassesColour:
+      savedProfile.glassesColour as GlassesColour,
+  });
+
+  setProfileSaveError("");
+  setOnboardingComplete(true);
+  setActiveTab("home");
+};
+
+const handleProfileNameSave = async () => {
+  if (!activeAccountId || !userProfile) {
+    return;
+  }
+
+  const trimmedName =
+    profileNameInput.trim();
+
+  if (!trimmedName) return;
+
+  setProfileSaveError("");
+
+  try {
+    const savedProfile =
+      await saveParticipantProfile(
+        activeAccountId,
+        {
+          displayName: trimmedName,
+          bodyColour:
+            penguinCustomization.bodyColour,
+          glassesColour:
+            penguinCustomization.glassesColour,
+        }
+      );
+
+    setUserProfile({
+      ...userProfile,
+      name: savedProfile.displayName,
+    });
+
+    setIsEditingProfile(false);
+  } catch (error) {
+    setProfileSaveError(
+      error instanceof Error
+        ? error.message
+        : "Unable to save profile name."
+    );
+  }
+};
 
   const handleHeart = (item: DiscoveryItem) => {
     if (!heartedItems.find((h) => h.id === item.id)) {
@@ -1044,89 +1159,102 @@ if (
     );
 
 
-  const handleDeleteProfile = () => {
-      if (!activeAccountId) return;
+  const handleDeleteProfile = async () => {
+    if (!activeAccountId) return;
 
-      const confirmed = window.confirm(
-        "Are you sure you want to delete this profile? This will remove its saved chat history and calendar activities from this device."
+    const confirmed = window.confirm(
+      "Are you sure you want to delete your profile? This removes your saved display name and penguin customization from the backend and clears chat/calendar data saved on this device. Your participant login account and study data are not deleted."
+    );
+
+    if (!confirmed) return;
+
+    try {
+      await deleteParticipantProfile(
+        activeAccountId
       );
-
-      if (!confirmed) return;
-
-      const accountIdToDelete = activeAccountId;
-
-      // Remove this user's saved data
-      localStorage.removeItem(profileKey(accountIdToDelete));
-      localStorage.removeItem(heartsKey(accountIdToDelete));
-      localStorage.removeItem(
-        `behaviour_change_session_${accountIdToDelete}`
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : "Unable to delete participant profile."
       );
-      localStorage.removeItem(
-        `behaviour_change_chat_${accountIdToDelete}`
-      );
-      localStorage.removeItem(
-        `behaviour_change_activities_${accountIdToDelete}`
-      );
-
-      const remainingAccounts = accounts.filter(
-        (account) => account.id !== accountIdToDelete
-      );
-
-      if (remainingAccounts.length > 0) {
-        localStorage.setItem(
-          ACCOUNTS_KEY,
-          JSON.stringify(remainingAccounts)
-        );
-
-        const nextAccountId = remainingAccounts[0].id;
-
-        localStorage.setItem(
-          ACTIVE_ACCOUNT_KEY,
-          nextAccountId
-        );
-
-        setAccounts(remainingAccounts);
-        setActiveAccountId(nextAccountId);
-        } else {
-          localStorage.removeItem(
-            ACCOUNTS_KEY
-          );
-
-          localStorage.removeItem(
-            ACTIVE_ACCOUNT_KEY
-          );
-
-          setAccounts([]);
-          setActiveAccountId(null);
-
-          sessionStorage.removeItem(
-            AUTH_SESSION_KEY
-          );
-
-          setAuthSession(null);
-          setUserProfile(null);
-        }
-      }
-
-
-const updatePenguinCustomization = (
-  updates: Partial<PenguinCustomization>
-) => {
-  setPenguinCustomization((previous) => {
-    const updated = {
-      ...previous,
-      ...updates,
-    };
-
-    if (activeAccountId) {
-      localStorage.setItem(
-        `behaviour_change_penguin_${activeAccountId}`,
-        JSON.stringify(updated)
-      );
+      return;
     }
 
-    return updated;
-  });
+    localStorage.removeItem(
+      heartsKey(activeAccountId)
+    );
+    localStorage.removeItem(
+      `behaviour_change_session_${activeAccountId}`
+    );
+    localStorage.removeItem(
+      `behaviour_change_chat_${activeAccountId}`
+    );
+    localStorage.removeItem(
+      `behaviour_change_activities_${activeAccountId}`
+    );
+    localStorage.removeItem(
+      `behaviour_change_penguin_${activeAccountId}`
+    );
+
+    setUserProfile({
+      id: activeAccountId,
+      name: "New User",
+      major: "",
+      interests: [],
+      bio: "",
+      avatar: "",
+      gpa: "",
+      skills: [],
+      experience: [],
+    });
+
+    setPenguinCustomization({
+      bodyColour: "blue",
+      glassesColour: "none",
+    });
+
+    setProfileSaveError("");
+    setShowPenguinCustomizer(false);
+    setOnboardingComplete(false);
+    setActiveTab("home");
+  };
+
+
+const updatePenguinCustomization = async (
+  updates: Partial<PenguinCustomization>
+) => {
+  if (!activeAccountId || !userProfile) {
+    return;
+  }
+
+  const previous = penguinCustomization;
+  const updated = {
+    ...previous,
+    ...updates,
+  };
+
+  setPenguinCustomization(updated);
+  setProfileSaveError("");
+
+  try {
+    await saveParticipantProfile(
+      activeAccountId,
+      {
+        displayName: userProfile.name,
+        bodyColour: updated.bodyColour,
+        glassesColour:
+          updated.glassesColour,
+      }
+    );
+  } catch (error) {
+    setPenguinCustomization(previous);
+    setProfileSaveError(
+      error instanceof Error
+        ? error.message
+        : "Unable to save penguin customization."
+    );
+  }
 };
 
 
@@ -1241,6 +1369,12 @@ const updatePenguinCustomization = (
 
             {/* Profile Card */}
             <div className="bg-white rounded-3xl shadow-lg border border-sky-100 p-6 md:p-8">
+
+              {profileSaveError && (
+                <div className="mb-6 bg-red-50 border border-red-100 text-red-600 text-sm rounded-xl px-4 py-3">
+                  {profileSaveError}
+                </div>
+              )}
 
               <div className="flex flex-col md:flex-row gap-8 md:gap-12">
 
@@ -1374,12 +1508,7 @@ const updatePenguinCustomization = (
                             !profileNameInput.trim()
                           }
                           onClick={() => {
-                            setUserProfile({
-                              ...userProfile,
-                              name: profileNameInput.trim(),
-                            });
-
-                            setIsEditingProfile(false);
+                            void handleProfileNameSave();
                           }}
                           className="
                             bg-sky-500
@@ -1495,11 +1624,11 @@ const updatePenguinCustomization = (
       <button
         key={colour.id}
         type="button"
-        onClick={() =>
-          updatePenguinCustomization({
+        onClick={() => {
+          void updatePenguinCustomization({
             bodyColour: colour.id,
-          })
-        }
+          });
+        }}
         title={colour.label}
         aria-label={`${colour.label} penguin`}
         className={`w-12 h-12 rounded-full border-4 transition ${
@@ -1527,11 +1656,11 @@ const updatePenguinCustomization = (
     {/* No Glasses */}
     <button
       type="button"
-      onClick={() =>
-        updatePenguinCustomization({
+      onClick={() => {
+        void updatePenguinCustomization({
           glassesColour: "none",
-        })
-      }
+        });
+      }}
       className={`h-11 px-4 rounded-xl border text-sm font-semibold transition ${
         penguinCustomization.glassesColour === "none"
           ? "bg-sky-100 border-sky-500 text-sky-800"
@@ -1546,11 +1675,11 @@ const updatePenguinCustomization = (
       <button
         key={colour.id}
         type="button"
-        onClick={() =>
-          updatePenguinCustomization({
+        onClick={() => {
+          void updatePenguinCustomization({
             glassesColour: colour.id,
-          })
-        }
+          });
+        }}
         title={`${colour.label} glasses`}
         aria-label={`${colour.label} glasses`}
         className={`w-11 h-11 rounded-full border-4 transition ${
