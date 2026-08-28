@@ -4,6 +4,7 @@ services:
     runtime: docker
     plan: free
     region: ohio
+    branch: render-deployment
     rootDir: backend
     dockerfilePath: ./Dockerfile
     dockerContext: .
