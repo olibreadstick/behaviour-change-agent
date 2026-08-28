@@ -954,8 +954,7 @@ const handleQuickReply = (option: string) => {
 
                         if (
                           input.trim() &&
-                          !loading &&
-                          quickReplies.length === 0
+                          !loading
                         ) {
                           event.currentTarget.form?.requestSubmit();
                         }
@@ -966,9 +965,7 @@ const handleQuickReply = (option: string) => {
                         ? "Listening..."
                         : "Type your message..."
                     }
-                    disabled={
-                      loading || quickReplies.length > 0
-                    }
+                    disabled={loading}
                     className="
                       flex-1
                       min-w-0
@@ -994,10 +991,7 @@ const handleQuickReply = (option: string) => {
                   <button
                     type="button"
                     onClick={toggleVoiceInput}
-                    disabled={
-                      loading ||
-                      quickReplies.length > 0
-                    }
+                    disabled={loading}
                     aria-label={
                       isListening
                         ? "Stop voice input"
@@ -1044,7 +1038,6 @@ const handleQuickReply = (option: string) => {
                   type="submit"
                   disabled={
                     loading ||
-                    quickReplies.length > 0 ||
                     !input.trim()
                   }
                   className="shrink-0 bg-sky-500 text-white px-3 md:px-5 py-3 rounded-xl font-semibold text-sm md:text-base hover:bg-sky-600 disabled:opacity-50"
