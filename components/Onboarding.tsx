@@ -1,144 +1,262 @@
 import React, { useState } from "react";
 
 interface OnboardingProps {
-  onComplete: (interests: string[], major: string) => void;
+  userId: string;
+  onComplete: (name: string) => void;
 }
 
-const INTEREST_OPTIONS = [
-  "Software Engineering",
-  "Philosophy",
-  "Jazz Performance",
-  "Biomedical Science",
-  "Sustainability",
-  "Entrepreneurship",
-  "Photography",
-  "Gaming",
-  "Social Justice",
-  "Robotics",
-  "Francophone Culture",
-  "Winter Sports",
-  "Debate",
-  "Pottery",
-];
-
-const Onboarding: React.FC<OnboardingProps> = ({ onComplete }) => {
+const Onboarding: React.FC<OnboardingProps> = ({
+  userId,
+  onComplete,
+}) => {
   const [step, setStep] = useState(1);
-  const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
-  const [major, setMajor] = useState("");
+  const [name, setName] = useState("");
 
-  const toggleInterest = (interest: string) => {
-    setSelectedInterests((prev) =>
-      prev.includes(interest)
-        ? prev.filter((i) => i !== interest)
-        : [...prev, interest],
-    );
+  const handleContinue = () => {
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
+      return;
+    }
+
+    setStep(2);
   };
 
   const handleFinish = () => {
-    if (selectedInterests.length > 0 && major) {
-      onComplete(selectedInterests, major);
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
+      return;
     }
+
+    onComplete(trimmedName);
   };
 
   return (
-    <div className="min-h-screen bg-[#fcfcfc] flex items-center justify-center p-6">
-      <div className="w-full max-w-2xl bg-white rounded-[3rem] shadow-2xl shadow-slate-200/50 p-12 lg:p-16 border border-slate-50">
-        <div className="mb-12">
-          <div className="flex gap-2 mb-10 max-w-xs mx-auto">
-            {[1, 2].map((i) => (
-              <div
-                key={i}
-                className={`h-1.5 flex-1 rounded-full transition-all duration-700 ${step >= i ? "bg-mcgill-red" : "bg-slate-100"}`}
+    <div className="min-h-screen bg-sky-50 flex items-center justify-center p-4 md:p-6">
+      <div className="w-full max-w-xl bg-white rounded-3xl shadow-lg border border-sky-100 p-6 md:p-10">
+
+        {/* Progress */}
+        <div className="flex gap-2 max-w-xs mx-auto mb-10">
+          {[1, 2].map((currentStep) => (
+            <div
+              key={currentStep}
+              className={`h-2 flex-1 rounded-full transition ${
+                step >= currentStep
+                  ? "bg-sky-500"
+                  : "bg-sky-100"
+              }`}
+            />
+          ))}
+        </div>
+
+        {step === 1 ? (
+          <>
+            {/* Step 1 */}
+            <div className="text-center">
+              <img
+                src="/behaviour-logo.png"
+                alt="Support Agent"
+                className="w-28 h-28 object-contain mx-auto"
               />
-            ))}
-          </div>
 
-          {step === 1 ? (
-            <div className="animate-in fade-in slide-in-from-bottom-8 duration-700">
-              <div className="text-center mb-10">
-                <span className="text-xs font-bold text-mcgill-red uppercase tracking-[0.3em] mb-4 block">
-                  Step 01
-                </span>
-                <h1 className="text-4xl lg:text-5xl font-black text-slate-900 mb-4 leading-tight">
-                  What sparks your curiosity?
-                </h1>
-                <p className="text-slate-500 text-lg">
-                  Select 3 or more interests to personalize your McGill
-                  experience.
-                </p>
-              </div>
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-600 mt-4">
+                Step 1 of 2
+              </p>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-12">
-                {INTEREST_OPTIONS.map((interest) => (
-                  <button
-                    key={interest}
-                    onClick={() => toggleInterest(interest)}
-                    className={`px-5 py-4 rounded-2xl text-sm font-bold transition-all border-2 text-center ${
-                      selectedInterests.includes(interest)
-                        ? "bg-mcgill-red border-mcgill-red text-white shadow-xl shadow-red-100 scale-[1.03]"
-                        : "bg-white border-slate-100 text-slate-600 hover:border-slate-200 hover:bg-slate-50"
-                    }`}
-                  >
-                    {interest}
-                  </button>
-                ))}
-              </div>
+              <h1 className="text-3xl md:text-4xl font-black text-sky-950 mt-3">
+                Welcome to the Support Agent
+              </h1>
 
-              <button
-                disabled={selectedInterests.length < 3}
-                onClick={() => setStep(2)}
-                className="w-full py-5 bg-mcgill-red text-white font-black text-lg rounded-3xl shadow-2xl shadow-red-100 disabled:opacity-30 disabled:shadow-none transition-all active:scale-95 hover:bg-red-600"
-              >
-                Next Step
-              </button>
+              <p className="text-slate-500 mt-3">
+                Before you get started, tell us what
+                you would like your Support Agent to
+                call you.
+              </p>
             </div>
-          ) : (
-            <div className="animate-in fade-in slide-in-from-right-8 duration-700">
-              <div className="text-center mb-10">
-                <span className="text-xs font-bold text-mcgill-red uppercase tracking-[0.3em] mb-4 block">
-                  Step 02
-                </span>
-                <h1 className="text-4xl lg:text-5xl font-black text-slate-900 mb-4 leading-tight">
-                  Tell us your Faculty
-                </h1>
-                <p className="text-slate-500 text-lg">
-                  We use this to find lab partners and peer collaborators.
-                </p>
-              </div>
 
-              <div className="space-y-8 mb-12">
+            {/* Name */}
+            <div className="mt-8">
+              <label
+                htmlFor="participant-name"
+                className="block text-sm font-bold text-sky-950 mb-2"
+              >
+                What would you like to be called?
+              </label>
+
+              <input
+                id="participant-name"
+                type="text"
+                value={name}
+                onChange={(event) =>
+                  setName(event.target.value)
+                }
+                placeholder="Enter your name"
+                autoComplete="off"
+                className="
+                  w-full
+                  border
+                  border-sky-200
+                  rounded-xl
+                  px-4
+                  py-3
+                  text-base
+                  outline-none
+                  focus:ring-2
+                  focus:ring-sky-300
+                "
+              />
+            </div>
+
+            {/* Privacy Notice */}
+            <div className="mt-5 bg-sky-50 border border-sky-200 rounded-2xl p-5">
+              <div className="flex gap-3">
+                <div className="shrink-0 w-9 h-9 rounded-full bg-sky-100 flex items-center justify-center">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="w-5 h-5 text-sky-700"
+                  >
+                    <rect
+                      width="18"
+                      height="11"
+                      x="3"
+                      y="11"
+                      rx="2"
+                      ry="2"
+                    />
+                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                  </svg>
+                </div>
+
                 <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1">
-                    Your Program / Major
-                  </label>
-                  <input
-                    type="text"
-                    value={major}
-                    onChange={(e) => setMajor(e.target.value)}
-                    placeholder="e.g. Desautels Management, Arts, Science..."
-                    className="w-full p-6 bg-slate-50 border-2 border-slate-50 rounded-3xl outline-none focus:border-red-100 focus:bg-white transition-all text-slate-800 font-bold text-xl placeholder:text-slate-300"
-                  />
+                  <h2 className="font-bold text-sky-950">
+                    Your name stays private
+                  </h2>
+
+                  <p className="text-sm text-sky-800 mt-2 leading-relaxed">
+                    Your name is used only to personalize
+                    your experience in the Support Agent.
+                    Researchers using the study dashboard
+                    cannot access your name.
+                  </p>
+
+                  <p className="text-sm text-sky-800 mt-2 leading-relaxed">
+                    Your study data is associated with
+                    your anonymous Participant ID rather
+                    than your name.
+                  </p>
                 </div>
               </div>
+            </div>
 
-              <div className="flex gap-4">
-                <button
-                  onClick={() => setStep(1)}
-                  className="flex-1 py-5 bg-slate-50 text-slate-400 font-bold rounded-3xl hover:bg-slate-100 transition-all border border-slate-100"
-                >
-                  Back
-                </button>
-                <button
-                  disabled={!major}
-                  onClick={handleFinish}
-                  className="flex-[2] py-5 bg-mcgill-red text-white font-black text-lg rounded-3xl shadow-2xl shadow-red-100 disabled:opacity-30 disabled:shadow-none transition-all active:scale-95 hover:bg-red-600"
-                >
-                  Begin Journey
-                </button>
+            <button
+              type="button"
+              onClick={handleContinue}
+              disabled={!name.trim()}
+              className="
+                w-full
+                mt-7
+                bg-sky-500
+                text-white
+                font-bold
+                py-3.5
+                rounded-xl
+                hover:bg-sky-600
+                disabled:opacity-50
+                transition
+              "
+            >
+              Continue
+            </button>
+          </>
+        ) : (
+          <>
+            {/* Step 2 */}
+            <div className="text-center">
+              <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-600">
+                Step 2 of 2
+              </p>
+
+              <h1 className="text-3xl md:text-4xl font-black text-sky-950 mt-3">
+                Meet Tie your Support Agent
+              </h1>
+
+              <p className="text-slate-500 mt-3">
+                Your penguin will be here to support
+                you throughout your physical activity
+                journey.
+              </p>
+
+              <img
+                src="/behaviour-logo.png"
+                alt="Your Support Agent penguin"
+                className="w-56 h-56 object-contain mx-auto mt-5"
+              />
+
+              <div className="bg-sky-50 border border-sky-100 rounded-2xl p-5 mt-4">
+                <p className="font-bold text-sky-950">
+                  Hi {name.trim()}!
+                </p>
+
+                <p className="text-sm text-slate-500 mt-2">
+                  You can customize your penguin later
+                  from your Profile.
+                </p>
+              </div>
+
+              {/* Participant ID */}
+              <div className="mt-5">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">
+                  Your Participant ID
+                </p>
+
+                <p className="text-sm font-semibold text-sky-700 mt-1 break-all">
+                  {userId}
+                </p>
               </div>
             </div>
-          )}
-        </div>
+
+            <div className="flex gap-3 mt-8">
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="
+                  flex-1
+                  bg-slate-100
+                  text-slate-600
+                  font-semibold
+                  py-3.5
+                  rounded-xl
+                  hover:bg-slate-200
+                "
+              >
+                Back
+              </button>
+
+              <button
+                type="button"
+                onClick={handleFinish}
+                className="
+                  flex-[2]
+                  bg-sky-500
+                  text-white
+                  font-bold
+                  py-3.5
+                  rounded-xl
+                  hover:bg-sky-600
+                "
+              >
+                Enter Support Agent
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -33,9 +33,47 @@ interface SavedChatState {
   activeConversationId: string | null;
 }
 
+type PenguinBodyColour =
+  | "blue"
+  | "pink"
+  | "purple"
+  | "green"
+  | "red";
+
+type GlassesColour =
+  | "none"
+  | "sky"
+  | "pink"
+  | "purple"
+  | "green"
+  | "red";
+
+interface PenguinCustomization {
+  bodyColour: PenguinBodyColour;
+  glassesColour: GlassesColour;
+}
+
+const PENGUIN_IMAGES: Record<PenguinBodyColour, string> = {
+  blue: "/behaviour-logo.png",
+  pink: "/penguin-pink.png",
+  purple: "/penguin-purple.png",
+  green: "/penguin-green.png",
+  red: "/penguin-red.png",
+};
+
+const GLASSES_COLOURS = [
+  { id: "sky", value: "#38bdf8" },
+  { id: "pink", value: "#f472b6" },
+  { id: "purple", value: "#a78bfa" },
+  { id: "green", value: "#4ade80" },
+  { id: "red", value: "#ef4444" },
+] as const;
+
+
+
 const INITIAL_GREETING: ChatMessage = {
   role: "assistant",
-  text: "Hi! I'm your Daily Coach!",
+  text: "Hi! I'm Tie, your Daily Coach!",
 };
 
 const MENU_MESSAGES = new Set([
@@ -83,10 +121,78 @@ const makeConversationTitle = (message: string) => {
   return cleaned.length > 42 ? `${cleaned.slice(0, 42)}…` : cleaned;
 };
 
+
+const PenguinLogo = ({
+  customization,
+  size = "desktop",
+}: {
+  customization: PenguinCustomization;
+  size?: "desktop" | "mobile";
+}) => {
+  const glassesColour =
+    customization.glassesColour === "none"
+      ? undefined
+      : GLASSES_COLOURS.find(
+          (colour) =>
+            colour.id === customization.glassesColour
+        )?.value;
+
+  const sizeClasses =
+    size === "mobile"
+      ? "w-24 h-24"
+      : "w-20 h-20";
+
+  return (
+    <div className={`relative ${sizeClasses} shrink-0`}>
+      <img
+        src={
+          PENGUIN_IMAGES[
+            customization.bodyColour
+          ]
+        }
+        alt="Daily Coach"
+        className="absolute inset-0 w-full h-full object-contain"
+      />
+
+      {customization.glassesColour !== "none" && (
+        <div className="absolute top-[25%] left-1/2 -translate-x-1/2 flex items-center">
+          <div
+            className="w-4 h-3 rounded-full border-2 bg-white/20"
+            style={{
+              borderColor: glassesColour,
+            }}
+          />
+
+          <div
+            className="w-2 h-[2px]"
+            style={{
+              backgroundColor: glassesColour,
+            }}
+          />
+
+          <div
+            className="w-4 h-3 rounded-full border-2 bg-white/20"
+            style={{
+              borderColor: glassesColour,
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+
 const BehaviourChangeChat: React.FC<BehaviourChangeChatProps> = ({
   userId,
 }) => {
   const chatStorageKey = `behaviour_change_chat_${userId}`;
+
+  const [penguinCustomization, setPenguinCustomization] =
+  useState<PenguinCustomization>({
+    bodyColour: "blue",
+    glassesColour: "none",
+  });
 
   const [chatState, setChatState] = useState<SavedChatState>(() => {
     const saved = localStorage.getItem(chatStorageKey);
@@ -149,6 +255,7 @@ const BehaviourChangeChat: React.FC<BehaviourChangeChatProps> = ({
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -157,6 +264,35 @@ const BehaviourChangeChat: React.FC<BehaviourChangeChatProps> = ({
       (conversation) =>
         conversation.id === chatState.activeConversationId
     ) ?? null;
+
+    useEffect(() => {
+  const saved = localStorage.getItem(
+    `behaviour_change_penguin_${userId}`
+  );
+
+  if (!saved) {
+    setPenguinCustomization({
+      bodyColour: "blue",
+      glassesColour: "none",
+    });
+
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(saved);
+
+    setPenguinCustomization({
+      bodyColour: parsed.bodyColour || "blue",
+      glassesColour: parsed.glassesColour || "none",
+    });
+  } catch {
+    setPenguinCustomization({
+      bodyColour: "blue",
+      glassesColour: "none",
+    });
+  }
+}, [userId]);
 
   const messages = activeConversation?.messages ?? [];
   const quickReplies = [
@@ -205,6 +341,7 @@ const BehaviourChangeChat: React.FC<BehaviourChangeChatProps> = ({
 
   const recognitionRef = useRef<any>(null);
   const spokenBaseRef = useRef("");
+  const messageInputRef = useRef<HTMLTextAreaElement>(null);
 
   const [isListening, setIsListening] = useState(false);
   const [speechSupported, setSpeechSupported] = useState(true);
@@ -310,6 +447,15 @@ const BehaviourChangeChat: React.FC<BehaviourChangeChatProps> = ({
       JSON.stringify(chatState)
     );
   }, [chatState, chatStorageKey]);
+
+  useEffect(() => {
+  const textarea = messageInputRef.current;
+
+  if (!textarea) return;
+
+  textarea.style.height = "auto";
+  textarea.style.height = `${textarea.scrollHeight}px`;
+}, [input]);
 
   const createNewConversation = () => {
     if (recognitionRef.current && isListening) {
@@ -506,9 +652,91 @@ const handleQuickReply = (option: string) => {
     event.preventDefault();
     sendMessage(input);
   };
+  
 
   return (
     <div className="h-full p-6 bg-sky-50">
+      {/* Mobile conversation overlay */}
+{historyOpen && (
+  <div
+    className="md:hidden fixed inset-0 bg-black/30 z-[70]"
+    onClick={() => setHistoryOpen(false)}
+  />
+)}
+
+{/* Mobile conversation history */}
+<div
+  className={`md:hidden fixed top-0 left-0 h-full w-[85%] max-w-sm bg-white z-[80] shadow-2xl transition-transform duration-300 ${
+    historyOpen ? "translate-x-0" : "-translate-x-full"
+  }`}
+>
+  <div className="h-full flex flex-col p-5">
+
+    {/* Header */}
+    <div className="flex items-center justify-between mb-6">
+      <div>
+        <h2 className="text-lg font-black text-slate-900">
+          Conversations
+        </h2>
+
+        <p className="text-xs text-slate-400">
+          Your previous AI Coach chats
+        </p>
+      </div>
+
+      <button
+        onClick={() => setHistoryOpen(false)}
+        className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-500 hover:bg-slate-100"
+        aria-label="Close conversations"
+      >
+        ×
+      </button>
+    </div>
+
+    {/* New Conversation */}
+    <button
+      onClick={() => {
+        createNewConversation();
+        setHistoryOpen(false);
+      }}
+      disabled={loading}
+      className="w-full bg-sky-500 hover:bg-sky-600 text-white font-bold text-sm py-3 rounded-xl mb-5 disabled:opacity-50"
+    >
+      + New conversation
+    </button>
+
+    <p className="text-[10px] uppercase tracking-widest font-bold text-slate-400 mb-3">
+      Past conversations
+    </p>
+
+    {/* Conversation List */}
+    <div className="flex-1 overflow-y-auto space-y-2">
+      {chatState.conversations.map((conversation) => (
+        <button
+          key={conversation.id}
+          onClick={() => {
+            openConversation(conversation.id);
+            setHistoryOpen(false);
+          }}
+          className={`w-full text-left px-4 py-3 rounded-xl transition-colors ${
+            chatState.activeConversationId === conversation.id
+              ? "bg-sky-100 text-sky-800"
+              : "bg-slate-50 text-slate-600 hover:bg-slate-100"
+          }`}
+        >
+          <p className="text-sm font-bold truncate">
+            {conversation.title}
+          </p>
+
+          <p className="text-xs text-slate-400 mt-1">
+            {new Date(conversation.updatedAt).toLocaleDateString()}
+          </p>
+        </button>
+      ))}
+    </div>
+
+  </div>
+</div>
       <div className="h-full max-w-6xl mx-auto flex gap-4">
         {/* Conversation history */}
         <aside className="w-72 shrink-0 bg-white rounded-3xl shadow-lg overflow-hidden hidden md:flex md:flex-col">
@@ -558,28 +786,89 @@ const handleQuickReply = (option: string) => {
 
         {/* Active chat */}
         <div className="bg-white rounded-3xl shadow-lg flex-1 min-w-0 flex flex-col overflow-hidden">
-          <div className="border-b border-sky-200 p-6 bg-sky-200">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-bold text-sky-950">
-                  Daily Coach
-                </h1>
 
-                <p className="text-sky-700 mt-1">
-                  Get support with your physical activity goals whenever you need it.
-                </p>
-              </div>
+          {/* Daily Coach Header */}
+      <div className="border-b border-sky-200 bg-sky-200">
 
-              {/* Mobile new conversation button */}
-              <button
-                onClick={createNewConversation}
-                disabled={loading}
-                className="md:hidden bg-white text-sky-700 border border-sky-300 px-3 py-2 rounded-xl text-sm font-semibold disabled:opacity-50"
-              >
-                + New
-              </button>
-            </div>
+        {/* ========================= */}
+        {/* DESKTOP HEADER */}
+        {/* ========================= */}
+        <div className="hidden md:flex items-center gap-4 p-6">
+
+        
+
+          <div>
+            <h1 className="text-2xl font-bold text-sky-950">
+              Daily Coach
+            </h1>
+
+            <p className="text-sky-700 mt-1">
+              Get support with your physical activity goals whenever you need it.
+            </p>
           </div>
+          <PenguinLogo
+            customization={penguinCustomization}
+            size="desktop"
+          />
+
+        </div>
+
+
+        {/* ========================= */}
+        {/* MOBILE HEADER */}
+        {/* ========================= */}
+        <div className="md:hidden p-4">
+
+            {/* Mobile Header */}
+        <div className="md:hidden p-4">
+
+          {/* Title + Penguin */}
+          <div className="flex items-start justify-between gap-4">
+
+            <div className="min-w-0 flex-1">
+              <h1 className="text-2xl font-bold text-sky-950">
+                Daily Coach
+              </h1>
+
+              <p className="text-sky-700 mt-1 text-sm leading-relaxed">
+                Get support with your physical activity
+                <br />
+                goals whenever you need it.
+              </p>
+            </div>
+
+            <PenguinLogo
+              customization={penguinCustomization}
+              size="mobile"
+            />
+
+          </div>
+
+          {/* Mobile Buttons */}
+          <div className="flex gap-3 mt-4">
+
+            <button
+              onClick={() => setHistoryOpen(true)}
+              className="flex-1 bg-white text-sky-700 border border-sky-300 px-3 py-3 rounded-xl text-sm font-semibold"
+            >
+              ☰ Chats
+            </button>
+
+            <button
+              onClick={createNewConversation}
+              disabled={loading}
+              className="flex-1 bg-white text-sky-700 border border-sky-300 px-3 py-3 rounded-xl text-sm font-semibold disabled:opacity-50"
+            >
+              + New
+            </button>
+
+          </div>
+
+        </div>
+
+        </div>
+
+      </div>
 
           <div className="flex-1 overflow-y-auto p-6 space-y-4">
             {messages.map((message, index) => (
@@ -608,12 +897,6 @@ const handleQuickReply = (option: string) => {
                 <div className="bg-sky-50 text-sky-600 border border-sky-100 rounded-2xl px-4 py-3">
                   Thinking...
                 </div>
-              </div>
-            )}
-
-            {error && (
-              <div className="text-red-600 text-sm">
-                {error}
               </div>
             )}
 
@@ -655,25 +938,57 @@ const handleQuickReply = (option: string) => {
               )}
 
               <form
-                onSubmit={handleSubmit}
-                className="p-4 flex gap-3"
-              >
-                <input
-                  type="text"
-                  value={input}
-                  onChange={(event) =>
-                    setInput(event.target.value)
-                  }
-                  placeholder={
-                    isListening
-                      ? "Listening..."
-                      : "Type your message..."
-                  }
-                  disabled={
-                    loading || quickReplies.length > 0
-                  }
-                  className="flex-1 border border-sky-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-300 disabled:bg-sky-50"
-                />
+                  onSubmit={handleSubmit}
+                  className="p-3 md:p-4 flex items-end gap-2 md:gap-3"
+                >
+                  <textarea
+                    ref={messageInputRef}
+                    value={input}
+                    rows={1}
+                    onChange={(event) =>
+                      setInput(event.target.value)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" && !event.shiftKey) {
+                        event.preventDefault();
+
+                        if (
+                          input.trim() &&
+                          !loading &&
+                          quickReplies.length === 0
+                        ) {
+                          event.currentTarget.form?.requestSubmit();
+                        }
+                      }
+                    }}
+                    placeholder={
+                      isListening
+                        ? "Listening..."
+                        : "Type your message..."
+                    }
+                    disabled={
+                      loading || quickReplies.length > 0
+                    }
+                    className="
+                      flex-1
+                      min-w-0
+                      min-h-[48px]
+                      max-h-32
+                      md:max-h-40
+                      resize-none
+                      overflow-y-auto
+                      border
+                      border-sky-200
+                      rounded-xl
+                      px-3
+                      md:px-4
+                      py-3
+                      outline-none
+                      focus:ring-2
+                      focus:ring-sky-300
+                      disabled:bg-sky-50
+                    "
+                  />
 
                 {speechSupported && (
                   <button
@@ -693,7 +1008,7 @@ const handleQuickReply = (option: string) => {
                         ? "Stop listening"
                         : "Use voice input"
                     }
-                    className={`w-12 h-12 flex items-center justify-center rounded-xl border transition-all disabled:opacity-50 ${
+                    className={`w-11 h-11 md:w-12 md:h-12 shrink-0 flex items-center justify-center rounded-xl border transition-all disabled:opacity-50 ${
                       isListening
                         ? "bg-red-50 border-red-300 text-red-600"
                         : "bg-sky-50 border-sky-200 text-sky-600 hover:bg-sky-100"
@@ -732,7 +1047,7 @@ const handleQuickReply = (option: string) => {
                     quickReplies.length > 0 ||
                     !input.trim()
                   }
-                  className="bg-sky-500 text-white px-5 py-3 rounded-xl font-semibold hover:bg-sky-600 disabled:opacity-50"
+                  className="shrink-0 bg-sky-500 text-white px-3 md:px-5 py-3 rounded-xl font-semibold text-sm md:text-base hover:bg-sky-600 disabled:opacity-50"
                 >
                   Send
                 </button>

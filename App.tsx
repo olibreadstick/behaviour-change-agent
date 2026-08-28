@@ -3,16 +3,27 @@ import Navigation from "./components/Navigation";
 import DiscoverySwipe from "./components/DiscoverySwipe";
 import BehaviourChangeChat from "./components/BehaviourChangeChat";
 import Onboarding from "./components/Onboarding";
-import Welcome from "./components/Welcome";
 import { DiscoveryItem, DiscoveryType, CollabRequest } from "./types";
 import type { UserProfile } from "./types";
 import Calendar from "./components/Calendar";
 import Resources from "./components/Resources";
 import Workshop from "./components/Workshop";
-import { truncateSync } from "node:fs";
+import CommunityBoard from "./components/CommunityBoard";
 import AdminDashboard from "./components/AdminDashboard";
+import GoalSetting from "./components/GoalSetting";
 import { logUsageEvent } from "./utils/usageTracking";
 import Home from "./components/Home";
+import Login from "./components/Login";
+import {
+  loginParticipant,
+  signupParticipant,
+  loginAdmin,
+  changeAdminPassword,
+} from "./services/auth";
+
+import {
+  getParticipantSummary,
+} from "./services/participants";
 
 const ACCOUNTS_KEY = "uc_accounts";
 const ACTIVE_ACCOUNT_KEY = "uc_active_account";
@@ -23,8 +34,47 @@ const heartsKey = (id: string) => `uc_hearted_${id}`;
 
 type Account = { id: string; name: string; createdAt: number };
 
-const makeAccountId = () =>
-  `acc_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+type AuthSession =
+  | {
+      role: "participant";
+      userId: string;
+    }
+  | {
+      role: "admin";
+    };
+
+type PenguinBodyColour =
+  | "blue"
+  | "pink"
+  | "purple"
+  | "green"
+  | "red";
+
+type GlassesColour =
+  | "none"
+  | "sky"
+  | "pink"
+  | "purple"
+  | "green"
+  | "red";
+
+interface PenguinCustomization {
+  bodyColour: PenguinBodyColour;
+  glassesColour: GlassesColour;
+}
+
+const ACCESSORY_COLOURS = [
+  { id: "sky", label: "Sky", value: "#38bdf8" },
+  { id: "pink", label: "Pink", value: "#f472b6" },
+  { id: "purple", label: "Purple", value: "#a78bfa" },
+  { id: "green", label: "Green", value: "#4ade80" },
+  { id: "red", label: "Red", value: "#ef4444" },
+] as const;
+
+
+const AUTH_SESSION_KEY =
+  "support_agent_auth_session";
+
 
 
 const COLLAB_GOALS = [
@@ -44,7 +94,56 @@ const CREATE_TYPES = [
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState("home");
 
-  const [showWelcome, setShowWelcome] = useState(false);
+  const [authSession, setAuthSession] =
+  useState<AuthSession | null>(() => {
+    const saved = sessionStorage.getItem(
+      AUTH_SESSION_KEY
+    );
+
+    if (!saved) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(saved);
+    } catch {
+      return null;
+    }
+  });
+
+const [
+  showAdminPasswordForm,
+  setShowAdminPasswordForm,
+] = useState(false);
+
+const [
+  adminCurrentPassword,
+  setAdminCurrentPassword,
+] = useState("");
+
+const [
+  adminNewPassword,
+  setAdminNewPassword,
+] = useState("");
+
+const [
+  adminConfirmPassword,
+  setAdminConfirmPassword,
+] = useState("");
+
+const [
+  adminPasswordMessage,
+  setAdminPasswordMessage,
+] = useState("");
+
+const [
+  adminPasswordError,
+  setAdminPasswordError,
+] = useState("");
+
+const [loginError, setLoginError] =
+  useState("");
+
   const [onboardingComplete, setOnboardingComplete] = useState(false);
 
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -52,37 +151,45 @@ const App: React.FC = () => {
 
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isEditingProfile, setIsEditingProfile] = useState(false);
+  const [profileNameInput, setProfileNameInput] =
+  useState("");
 
-  const [activityInput, setActivityInput] = useState("");
+const [
+  showPenguinCustomizer,
+  setShowPenguinCustomizer,
+] = useState(false);
+
+const [
+  penguinCustomization,
+  setPenguinCustomization,
+] = useState<PenguinCustomization>({
+  bodyColour: "blue",
+  glassesColour: "none",
+});
+
+const PENGUIN_IMAGES: Record<
+  PenguinBodyColour,
+  string
+> = {
+  blue: "/behaviour-logo.png",
+  pink: "/penguin-pink.png",
+  purple: "/penguin-purple.png",
+  green: "/penguin-green.png",
+  red: "/penguin-red.png",
+};
+
+const PENGUIN_BODY_COLOURS = [
+  { id: "blue", label: "Default", value: "#38bdf8" },
+  { id: "pink", label: "Pink", value: "#f472b6" },
+  { id: "purple", label: "Purple", value: "#a78bfa" },
+  { id: "green", label: "Green", value: "#4ade80" },
+  { id: "red", label: "Red", value: "#ef4444" },
+] as const;
+
 
   const [newReqType, setNewReqType] = useState<DiscoveryType>(
     DiscoveryType.COLLAB_REQUEST,
   );
-
-  const MAX_AVATAR_BYTES = 5_000_000;
-
-  const handleAvatarFile = (file: File | null) => {
-    if (!file) return;
-
-    if (!file.type.startsWith("image/")) {
-      alert("Please upload an image file (PNG/JPG/WebP).");
-      return;
-    }
-
-    if (file.size > MAX_AVATAR_BYTES) {
-      alert("That image is too large. Try one under ~5MB.");
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
-      setUserProfile((prev) => (prev ? { ...prev, avatar: dataUrl } : prev));
-    };
-    reader.onerror = () =>
-      alert("Could not read that file. Try another image.");
-    reader.readAsDataURL(file);
-  };
 
   const defaultImageFor = (t: DiscoveryType) => {
     switch (t) {
@@ -114,43 +221,119 @@ const App: React.FC = () => {
   const [eventDate, setEventDate] = useState(""); // YYYY-MM-DD
   const [eventTime, setEventTime] = useState(""); // HH:MM
 
-  const [hasPersonalKey, setHasPersonalKey] = useState(false);
 
-  useEffect(() => {
-    const c = localStorage.getItem(GLOBAL_COLLABS_KEY);
-    setCollabRequests(c ? JSON.parse(c) : []);
+useEffect(() => {
+  const c = localStorage.getItem(
+    GLOBAL_COLLABS_KEY
+  );
 
-    const savedAccounts = localStorage.getItem(ACCOUNTS_KEY);
-    const savedActive = localStorage.getItem(ACTIVE_ACCOUNT_KEY);
+  setCollabRequests(
+    c ? JSON.parse(c) : []
+  );
 
-    const parsedAccounts: Account[] = savedAccounts
+  const savedAccounts =
+    localStorage.getItem(ACCOUNTS_KEY);
+
+  const parsedAccounts: Account[] =
+    savedAccounts
       ? JSON.parse(savedAccounts)
       : [];
 
-    if (parsedAccounts.length === 0) {
-      const id = makeAccountId();
-      const defaultAcc: Account = {
-        id,
-        name: "New User",
-        createdAt: Date.now(),
-      };
-      localStorage.setItem(ACCOUNTS_KEY, JSON.stringify([defaultAcc]));
-      localStorage.setItem(ACTIVE_ACCOUNT_KEY, id);
-      setAccounts([defaultAcc]);
-      setActiveAccountId(id);
-      return;
-    }
+  setAccounts(parsedAccounts);
+}, []);
 
-    setAccounts(parsedAccounts);
 
-    const activeId =
-      savedActive && parsedAccounts.some((a) => a.id === savedActive)
-        ? savedActive
-        : parsedAccounts[0].id;
+const handleAdminPasswordChange = async (
+  event: React.FormEvent
+) => {
+  event.preventDefault();
 
-    setActiveAccountId(activeId);
-    localStorage.setItem(ACTIVE_ACCOUNT_KEY, activeId);
-  }, []);
+  setAdminPasswordError("");
+  setAdminPasswordMessage("");
+
+  if (adminNewPassword.length < 8) {
+    setAdminPasswordError(
+      "New password must contain at least 8 characters."
+    );
+    return;
+  }
+
+  if (
+    adminNewPassword !==
+    adminConfirmPassword
+  ) {
+    setAdminPasswordError(
+      "The new passwords do not match."
+    );
+    return;
+  }
+
+  try {
+    const response =
+      await changeAdminPassword(
+        "admin",
+        adminCurrentPassword,
+        adminNewPassword
+      );
+
+    setAdminPasswordMessage(
+      response.message
+    );
+
+    setAdminCurrentPassword("");
+    setAdminNewPassword("");
+    setAdminConfirmPassword("");
+
+  } catch (error) {
+
+    setAdminPasswordError(
+      error instanceof Error
+        ? error.message
+        : "Unable to change password."
+    );
+  }
+};
+
+
+
+useEffect(() => {
+  if (!authSession) {
+    setActiveAccountId(null);
+    return;
+  }
+
+  if (authSession.role === "admin") {
+    setActiveAccountId(null);
+    return;
+  }
+
+  if (accounts.length === 0) {
+    return;
+  }
+
+  const participantExists =
+    accounts.some(
+      (account) =>
+        account.id === authSession.userId
+    );
+
+  if (!participantExists) {
+    sessionStorage.removeItem(
+      AUTH_SESSION_KEY
+    );
+
+    setAuthSession(null);
+    setActiveAccountId(null);
+
+    return;
+  }
+
+  setActiveAccountId(
+    authSession.userId
+  );
+}, [authSession, accounts]);
+
+
 
   useEffect(() => {
     if (!activeAccountId) return;
@@ -168,18 +351,53 @@ const App: React.FC = () => {
         name: "New User",
         major: "",
         interests: [],
-        bio: "Prospective high-achiever.",
+        bio: "",
         avatar: "",
-        gpa: "3.8",
-        skills: ["Python", "Teamwork", "Research"],
-        experience: ["Research Assistant @ McGill", "Intern @ Shopify"],
+        gpa: "",
+        skills: [],
+        experience: [],
       });
-      setOnboardingComplete(true);
+
+      setOnboardingComplete(false);
     }
 
     setHeartedItems(h ? JSON.parse(h) : []);
     setCollabRequests(c ? JSON.parse(c) : []);
   }, [activeAccountId, accounts]);
+
+useEffect(() => {
+  if (!activeAccountId) return;
+
+  const saved = localStorage.getItem(
+    `behaviour_change_penguin_${activeAccountId}`
+  );
+
+  if (!saved) {
+    setPenguinCustomization({
+      bodyColour: "blue",
+      glassesColour: "none",
+    });
+
+    return;
+  }
+
+  try {
+    const parsed = JSON.parse(saved);
+
+    setPenguinCustomization({
+      bodyColour:
+        parsed.bodyColour || "blue",
+      glassesColour:
+        parsed.glassesColour || "none",
+    });
+  } catch {
+    setPenguinCustomization({
+      bodyColour: "blue",
+      glassesColour: "none",
+    });
+  }
+}, [activeAccountId]);
+
 
   useEffect(() => {
     const c = localStorage.getItem(GLOBAL_COLLABS_KEY);
@@ -195,25 +413,6 @@ const App: React.FC = () => {
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
   }, []);
-
-  useEffect(() => {
-    if (!userProfile || !activeAccountId) return;
-    if (userProfile.id !== activeAccountId) return;
-
-    setAccounts((prev) => {
-      const current = prev.find((a) => a.id === activeAccountId);
-      if (!current) return prev;
-
-      if (current.name === userProfile.name) return prev;
-
-      const updated = prev.map((acc) =>
-        acc.id === activeAccountId ? { ...acc, name: userProfile.name } : acc,
-      );
-
-      localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(updated));
-      return updated;
-    });
-  }, [userProfile?.name, userProfile?.id, activeAccountId]);
 
   useEffect(() => {
     if (!activeAccountId || !userProfile) return;
@@ -269,9 +468,20 @@ useEffect(() => {
   );
 }, [activeTab, activeAccountId]);
 
-  const handleOnboardingComplete = (interests: string[], major: string) => {
-    setUserProfile((prev) => (prev ? { ...prev, interests, major } : prev));
+const handleOnboardingComplete = (
+    name: string
+  ) => {
+    setUserProfile((previous) =>
+      previous
+        ? {
+            ...previous,
+            name,
+          }
+        : previous
+    );
+
     setOnboardingComplete(true);
+    setActiveTab("home");
   };
 
   const handleHeart = (item: DiscoveryItem) => {
@@ -357,62 +567,481 @@ useEffect(() => {
     });
   };
 
-  const toggleArrayItem = (
-    field: "skills" | "experience",
-    index: number,
-    value: string,
-  ) => {
-    setUserProfile((prev) => {
-      if (!prev) return prev;
-      const updated = [...prev[field]];
-      updated[index] = value;
-      return { ...prev, [field]: updated };
-    });
-  };
 
-  const addArrayItem = (field: "skills" | "experience") => {
-    setUserProfile((prev) =>
-      prev ? { ...prev, [field]: [...prev[field], ""] } : prev,
-    );
-  };
+const handleParticipantLogin = async (
+  username: string,
+  password: string
+) => {
+  try {
+    setLoginError("");
 
-  const removeArrayItem = (field: "skills" | "experience", index: number) => {
-    setUserProfile((prev) =>
-      prev
-        ? { ...prev, [field]: prev[field].filter((_, i) => i !== index) }
-        : prev,
-    );
-  };
+    const authResponse =
+      await loginParticipant(
+        username,
+        password
+      );
 
-  const handleUpdateKey = async () => {
-    if ((window as any).aistudio?.openSelectKey) {
-      await (window as any).aistudio.openSelectKey();
-      setHasPersonalKey(true);
+    const participant =
+      await getParticipantSummary(
+        authResponse.participantId
+      );
+
+    const participantExists =
+      accounts.some(
+        (account) =>
+          account.id ===
+          participant.participantId
+      );
+
+    if (!participantExists) {
+      const newAccount: Account = {
+        id: participant.participantId,
+        name: "Participant",
+        createdAt: participant.createdAt,
+      };
+
+      const updatedAccounts = [
+        ...accounts,
+        newAccount,
+      ];
+
+      localStorage.setItem(
+        ACCOUNTS_KEY,
+        JSON.stringify(updatedAccounts)
+      );
+
+      setAccounts(updatedAccounts);
     }
-  };
 
-  {
-    /* Olivia */
+    const session: AuthSession = {
+      role: "participant",
+      userId: participant.participantId,
+    };
+
+    sessionStorage.setItem(
+      AUTH_SESSION_KEY,
+      JSON.stringify(session)
+    );
+
+    localStorage.setItem(
+      ACTIVE_ACCOUNT_KEY,
+      participant.participantId
+    );
+
+    setAuthSession(session);
+
+    setActiveAccountId(
+      participant.participantId
+    );
+
+    setLoginError("");
+    setActiveTab("home");
+
+  } catch (error) {
+
+    setLoginError(
+      error instanceof Error
+        ? error.message
+        : "Unable to log in."
+    );
   }
+};
+
+const handleParticipantAccountCreate = async (
+  username: string,
+  password: string
+) => {
+  try {
+    setLoginError("");
+
+    const authResponse =
+      await signupParticipant(
+        username,
+        password
+      );
+
+    const participant =
+      await getParticipantSummary(
+        authResponse.participantId
+      );
+
+    const newAccount: Account = {
+      id: participant.participantId,
+      name: "Participant",
+      createdAt: participant.createdAt,
+    };
+
+    const updatedAccounts = [
+      ...accounts,
+      newAccount,
+    ];
+
+    localStorage.setItem(
+      ACCOUNTS_KEY,
+      JSON.stringify(updatedAccounts)
+    );
+
+    localStorage.setItem(
+      ACTIVE_ACCOUNT_KEY,
+      participant.participantId
+    );
+
+    setAccounts(updatedAccounts);
+
+    const session: AuthSession = {
+      role: "participant",
+      userId: participant.participantId,
+    };
+
+    sessionStorage.setItem(
+      AUTH_SESSION_KEY,
+      JSON.stringify(session)
+    );
+
+    setAuthSession(session);
+
+    setActiveAccountId(
+      participant.participantId
+    );
+
+    setUserProfile(null);
+    setOnboardingComplete(false);
+    setLoginError("");
+    setActiveTab("home");
+
+  } catch (error) {
+
+    setLoginError(
+      error instanceof Error
+        ? error.message
+        : "Unable to create account."
+    );
+  }
+};
+
+
+const handleAdminLogin = async (
+  username: string,
+  password: string
+) => {
+  try {
+    setLoginError("");
+
+    await loginAdmin(
+      username,
+      password
+    );
+
+    const session: AuthSession = {
+      role: "admin",
+    };
+
+    sessionStorage.setItem(
+      AUTH_SESSION_KEY,
+      JSON.stringify(session)
+    );
+
+    setAuthSession(session);
+    setActiveAccountId(null);
+    setLoginError("");
+
+  } catch (error) {
+
+    setLoginError(
+      error instanceof Error
+        ? error.message
+        : "Unable to log in as administrator."
+    );
+  }
+};
+
+const handleLogout = () => {
+  sessionStorage.removeItem(
+    AUTH_SESSION_KEY
+  );
+
+  setAuthSession(null);
+  setActiveAccountId(null);
+  setUserProfile(null);
+  setOnboardingComplete(false);
+  setActiveTab("home");
+  setLoginError("");
+}; 
+  
+  
+  
   const needsDetails =
     newReqType === DiscoveryType.EVENT ||
     newReqType === DiscoveryType.NETWORKING ||
     newReqType === DiscoveryType.CLUB;
 
-  if (showWelcome) {
+  if (!authSession) {
     return (
-      <Welcome
-        onStart={() => {
-          setShowWelcome(false);
-          setActiveTab("discover");
-        }}
+      <Login
+        onParticipantLogin={
+          handleParticipantLogin
+        }
+        onParticipantAccountCreate={
+          handleParticipantAccountCreate
+        }
+        onAdminLogin={
+          handleAdminLogin
+        }
+        error={loginError}
       />
     );
   }
 
-  if (!userProfile) return null;
+  if (authSession.role === "admin") {
+  return (
+    <div className="min-h-screen bg-sky-50">
+
+      {/* Admin Header */}
+      <div className="bg-white border-b border-sky-100 px-4 md:px-8 py-4 flex items-center justify-between">
+
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.2em] text-sky-600">
+            Support Agent
+          </p>
+
+          <h1 className="text-xl font-bold text-sky-950 mt-1">
+            Administrator
+          </h1>
+        </div>
+
+        <div className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            setShowAdminPasswordForm(
+              (previous) => !previous
+            );
+
+            setAdminPasswordError("");
+            setAdminPasswordMessage("");
+          }}
+          className="
+            border
+            border-sky-200
+            text-sky-700
+            font-semibold
+            px-4
+            py-2.5
+            rounded-xl
+            hover:bg-sky-50
+          "
+        >
+          Change Password
+        </button>
+
+        <button
+          type="button"
+          onClick={handleLogout}
+          className="
+            border
+            border-sky-200
+            text-sky-700
+            font-semibold
+            px-4
+            py-2.5
+            rounded-xl
+            hover:bg-sky-50
+          "
+        >
+          Log Out
+        </button>
+      </div>
+      </div>
+
+      {showAdminPasswordForm && (
+  <div className="max-w-xl mx-auto mt-6 px-4">
+    <div className="bg-white border border-sky-100 rounded-3xl shadow-lg p-6">
+
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-sky-950">
+            Change Administrator Password
+          </h2>
+
+          <p className="text-sm text-slate-500 mt-1">
+            Enter your current password before
+            choosing a new password.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() =>
+            setShowAdminPasswordForm(false)
+          }
+          className="text-2xl text-slate-400 hover:text-slate-700"
+          aria-label="Close password form"
+        >
+          ×
+        </button>
+      </div>
+
+      <form
+        onSubmit={handleAdminPasswordChange}
+        className="mt-6"
+      >
+        <div>
+          <label className="block text-sm font-bold text-sky-950 mb-2">
+            Current Password
+          </label>
+
+          <input
+            type="password"
+            value={adminCurrentPassword}
+            onChange={(event) =>
+              setAdminCurrentPassword(
+                event.target.value
+              )
+            }
+            autoComplete="current-password"
+            className="
+              w-full
+              border
+              border-sky-200
+              rounded-xl
+              px-4
+              py-3
+              outline-none
+              focus:ring-2
+              focus:ring-sky-300
+            "
+          />
+        </div>
+
+        <div className="mt-4">
+          <label className="block text-sm font-bold text-sky-950 mb-2">
+            New Password
+          </label>
+
+          <input
+            type="password"
+            value={adminNewPassword}
+            onChange={(event) =>
+              setAdminNewPassword(
+                event.target.value
+              )
+            }
+            autoComplete="new-password"
+            className="
+              w-full
+              border
+              border-sky-200
+              rounded-xl
+              px-4
+              py-3
+              outline-none
+              focus:ring-2
+              focus:ring-sky-300
+            "
+          />
+
+          <p className="text-xs text-slate-400 mt-2">
+            Use at least 8 characters.
+          </p>
+        </div>
+
+        <div className="mt-4">
+          <label className="block text-sm font-bold text-sky-950 mb-2">
+            Confirm New Password
+          </label>
+
+          <input
+            type="password"
+            value={adminConfirmPassword}
+            onChange={(event) =>
+              setAdminConfirmPassword(
+                event.target.value
+              )
+            }
+            autoComplete="new-password"
+            className="
+              w-full
+              border
+              border-sky-200
+              rounded-xl
+              px-4
+              py-3
+              outline-none
+              focus:ring-2
+              focus:ring-sky-300
+            "
+          />
+        </div>
+
+        {adminPasswordError && (
+          <div className="mt-4 bg-red-50 border border-red-100 text-red-600 text-sm rounded-xl px-4 py-3">
+            {adminPasswordError}
+          </div>
+        )}
+
+        {adminPasswordMessage && (
+          <div className="mt-4 bg-green-50 border border-green-100 text-green-700 text-sm rounded-xl px-4 py-3">
+            {adminPasswordMessage}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={
+            !adminCurrentPassword ||
+            !adminNewPassword ||
+            !adminConfirmPassword
+          }
+          className="
+            w-full
+            mt-6
+            bg-sky-600
+            text-white
+            font-bold
+            py-3
+            rounded-xl
+            hover:bg-sky-700
+            disabled:opacity-50
+          "
+        >
+          Update Password
+        </button>
+      </form>
+    </div>
+  </div>
+)}
+
+
+      <AdminDashboard
+        accounts={accounts}
+      />
+
+    </div>
+  );
+}
+
+if (
+  authSession.role === "participant" &&
+  !userProfile
+) {
+  return (
+    <div className="min-h-screen bg-sky-50 flex items-center justify-center">
+      <p className="text-sky-700 font-semibold">
+        Loading your account...
+      </p>
+    </div>
+  );
+}
+
+
+
   if (!onboardingComplete)
-    return <Onboarding onComplete={handleOnboardingComplete} />;
+    return (
+      <Onboarding
+        userId={activeAccountId!}
+        onComplete={handleOnboardingComplete}
+      />
+    );
 
 
   const handleDeleteProfile = () => {
@@ -458,30 +1087,49 @@ useEffect(() => {
 
         setAccounts(remainingAccounts);
         setActiveAccountId(nextAccountId);
-      } else {
-        const id = makeAccountId();
+        } else {
+          localStorage.removeItem(
+            ACCOUNTS_KEY
+          );
 
-        const newAccount: Account = {
-          id,
-          name: "New User",
-          createdAt: Date.now(),
-        };
+          localStorage.removeItem(
+            ACTIVE_ACCOUNT_KEY
+          );
 
-        localStorage.setItem(
-          ACCOUNTS_KEY,
-          JSON.stringify([newAccount])
-        );
+          setAccounts([]);
+          setActiveAccountId(null);
 
-        localStorage.setItem(ACTIVE_ACCOUNT_KEY, id);
+          sessionStorage.removeItem(
+            AUTH_SESSION_KEY
+          );
 
-        setAccounts([newAccount]);
-        setActiveAccountId(id);
+          setAuthSession(null);
+          setUserProfile(null);
+        }
       }
 
-      setShowWelcome(false);
-      setOnboardingComplete(true);
-      setActiveTab("home");
+
+const updatePenguinCustomization = (
+  updates: Partial<PenguinCustomization>
+) => {
+  setPenguinCustomization((previous) => {
+    const updated = {
+      ...previous,
+      ...updates,
     };
+
+    if (activeAccountId) {
+      localStorage.setItem(
+        `behaviour_change_penguin_${activeAccountId}`,
+        JSON.stringify(updated)
+      );
+    }
+
+    return updated;
+  });
+};
+
+
 
   const renderContent = () => {
     switch (activeTab) {
@@ -532,6 +1180,20 @@ useEffect(() => {
             userId={activeAccountId!}
           />
         );
+      case "community":
+        return (
+          <CommunityBoard
+            key={activeAccountId}
+            userId={activeAccountId!}
+          />
+        );
+      case "goals":
+        return (
+          <GoalSetting
+            key={activeAccountId}
+            userId={activeAccountId!}
+          />
+        );
       case "resources":
         return (
           <Resources
@@ -560,198 +1222,378 @@ useEffect(() => {
           </div>
         );
 
-      case "admin":
-        return (
-          <AdminDashboard
-            accounts={accounts}
-          />
-        );
-
       case "profile":
-        return (
-          <div className="min-h-screen bg-sky-50 p-6 lg:p-12">
-            <div className="max-w-4xl mx-auto">
-              <div className="bg-sky-200 rounded-3xl p-6 mb-6 shadow-sm">
-                <h1 className="text-2xl font-bold text-sky-950">
-                  Profile
-                </h1>
+      return (
+        <div className="min-h-screen bg-sky-50 p-4 md:p-6 lg:p-12">
+          <div className="max-w-4xl mx-auto">
 
-                <p className="text-sky-700 mt-2">
-                  Manage your personal information and Behaviour Change Agent account.
-                </p>
-              </div>
+            {/* Header */}
+            <div className="bg-sky-200 rounded-3xl p-6 md:p-8 mb-6 shadow-sm">
+              <h1 className="text-2xl md:text-3xl font-bold text-sky-950">
+                Profile
+              </h1>
 
-              <div className="bg-white rounded-3xl shadow-lg border border-sky-100 p-8">
-                <div className="flex flex-col sm:flex-row items-center sm:items-start gap-8">
+              <p className="text-sky-700 mt-2">
+                Manage your Behaviour Change Agent profile
+                and personalize your penguin.
+              </p>
+            </div>
 
-                  <div className="w-32 h-32 rounded-full overflow-hidden bg-sky-100 border-4 border-sky-200 flex-shrink-0">
-                    <img
-                      src={
-                        userProfile.avatar?.trim()
-                          ? userProfile.avatar
-                          : `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(
-                              userProfile.name || "User"
-                            )}`
-                      }
-                      alt="Profile"
-                      className="w-full h-full object-cover"
-                    />
-                  </div>
+            {/* Profile Card */}
+            <div className="bg-white rounded-3xl shadow-lg border border-sky-100 p-6 md:p-8">
 
-                  <div className="flex-1 w-full">
-                    {isEditingProfile ? (
-                      <div className="space-y-5">
-                        <div>
-                          <label className="block text-sm font-semibold text-sky-950 mb-2">
-                            Name
-                          </label>
+              <div className="flex flex-col md:flex-row gap-8 md:gap-12">
 
-                          <input
-                            value={userProfile.name}
-                            onChange={(event) =>
-                              setUserProfile({
-                                ...userProfile,
-                                name: event.target.value,
-                              })
-                            }
-                            className="w-full border border-sky-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-300"
-                          />
-                        </div>
-                        
+                {/* Penguin */}
+                <div className="flex flex-col items-center shrink-0">
 
-                        <div>
-                          <label className="block text-sm font-semibold text-sky-950 mb-2">
-                            Preferred Activities
-                          </label>
+                  {/* Penguin Preview */}
+<div className="relative w-48 h-48 md:w-56 md:h-56">
 
-                          <input
-                            type="text"
-                            value={activityInput}
-                            onChange={(event) => setActivityInput(event.target.value)}
-                            placeholder="e.g. Walking, Swimming, Yoga"
-                            className="w-full border border-sky-200 rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-sky-300"
-                          />
+  {/* Base Penguin */}
+  <img
+    src={
+      PENGUIN_IMAGES[
+        penguinCustomization.bodyColour
+      ]
+    }
+    alt="Your customized penguin"
+    className="absolute inset-0 w-full h-full object-contain"
+  />
 
-                          <p className="text-xs text-slate-400 mt-2">
-                            Separate activities with commas.
-                          </p>
-                        </div>
+  {/* Glasses */}
+  {penguinCustomization.glassesColour !== "none" && (
+    <div className="absolute top-[25%] left-1/2 -translate-x-1/2 flex items-center">
 
+      {/* Left lens */}
+      <div
+        className="w-9 h-7 rounded-full border-[3px] bg-white/20"
+        style={{
+          borderColor:
+            ACCESSORY_COLOURS.find(
+              (colour) =>
+                colour.id ===
+                penguinCustomization.glassesColour
+            )?.value,
+        }}
+      />
 
-                        <div>
-                          <label className="block text-sm font-semibold text-sky-950 mb-2">
-                            Profile Picture
-                          </label>
+      {/* Bridge */}
+      <div
+        className="w-4 h-[3px]"
+        style={{
+          backgroundColor:
+            ACCESSORY_COLOURS.find(
+              (colour) =>
+                colour.id ===
+                penguinCustomization.glassesColour
+            )?.value,
+        }}
+      />
 
-                          <input
-                            type="file"
-                            accept="image/*"
-                            onChange={(event) =>
-                              handleAvatarFile(event.target.files?.[0] ?? null)
-                            }
-                            className="w-full border border-sky-200 rounded-xl px-4 py-3"
-                          />
-                        </div>
+      {/* Right lens */}
+      <div
+        className="w-9 h-7 rounded-full border-[3px] bg-white/20"
+        style={{
+          borderColor:
+            ACCESSORY_COLOURS.find(
+              (colour) =>
+                colour.id ===
+                penguinCustomization.glassesColour
+            )?.value,
+        }}
+      />
+    </div>
+  )}
 
-                        <div className="flex gap-3">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setUserProfile({
-                                ...userProfile,
-                                interests: activityInput
-                                  .split(",")
-                                  .map((activity) => activity.trim())
-                                  .filter(Boolean),
-                              });
+</div>
 
-                              setIsEditingProfile(false);
-                            }}
-                            className="bg-sky-500 text-white font-semibold px-5 py-3 rounded-xl hover:bg-sky-600"
-                          >
-                            Save Profile
-                          </button>
+                  <p className="text-sm font-semibold text-sky-700 mt-2">
+                    Your Penguin
+                  </p>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setUserProfile((previous) =>
-                                previous
-                                  ? { ...previous, avatar: "" }
-                                  : previous
-                              )
-                            }
-                            className="border border-sky-200 text-sky-700 font-semibold px-5 py-3 rounded-xl hover:bg-sky-50"
-                          >
-                            Remove Photo
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        <h2 className="text-3xl font-bold text-sky-950">
-                          {userProfile.name}
-                        </h2>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShowPenguinCustomizer(
+                        (previous) => !previous
+                      )
+                    }
+                    className="
+                      mt-4
+                      border
+                      border-sky-300
+                      bg-white
+                      text-sky-700
+                      font-semibold
+                      px-5
+                      py-2.5
+                      rounded-xl
+                      hover:bg-sky-50
+                    "
+                  >
+                    Customize Penguin
+                  </button>
 
-                        <div className="mt-5">
-                          <p className="text-sm font-semibold text-sky-700">
-                            User ID
-                          </p>
+                </div>
 
-                          <p className="text-sm text-slate-500 mt-1 break-all">
-                            {activeAccountId}
-                          </p>
-                        </div>
+                {/* Profile Information */}
+                <div className="flex-1 min-w-0">
 
-                        <div className="mt-5">
-                          <p className="text-sm font-semibold text-sky-700">
-                            Preferred Activities
-                          </p>
+                  {isEditingProfile ? (
+                    <div>
+                      <label className="block text-sm font-semibold text-sky-950 mb-2">
+                        Name
+                      </label>
 
-                          {userProfile.interests.length > 0 ? (
-                            <div className="flex flex-wrap gap-2 mt-2">
-                              {userProfile.interests.map((activity) => (
-                                <span
-                                  key={activity}
-                                  className="bg-sky-100 text-sky-700 px-3 py-1 rounded-full text-sm font-medium"
-                                >
-                                  {activity}
-                                </span>
-                              ))}
-                            </div>
-                          ) : (
-                            <p className="text-sm text-slate-400 mt-1">
-                              No preferred activities added yet.
-                            </p>
-                          )}
-                        </div>
+                      <input
+                        type="text"
+                        value={profileNameInput}
+                        onChange={(event) =>
+                          setProfileNameInput(
+                            event.target.value
+                          )
+                        }
+                        className="
+                          w-full
+                          border
+                          border-sky-200
+                          rounded-xl
+                          px-4
+                          py-3
+                          outline-none
+                          focus:ring-2
+                          focus:ring-sky-300
+                        "
+                      />
+
+                      <div className="flex flex-wrap gap-3 mt-4">
+                        <button
+                          type="button"
+                          disabled={
+                            !profileNameInput.trim()
+                          }
+                          onClick={() => {
+                            setUserProfile({
+                              ...userProfile,
+                              name: profileNameInput.trim(),
+                            });
+
+                            setIsEditingProfile(false);
+                          }}
+                          className="
+                            bg-sky-500
+                            text-white
+                            font-semibold
+                            px-5
+                            py-3
+                            rounded-xl
+                            hover:bg-sky-600
+                            disabled:opacity-50
+                          "
+                        >
+                          Save Name
+                        </button>
 
                         <button
                           type="button"
                           onClick={() => {
-                            setActivityInput(userProfile.interests.join(", "));
-                            setIsEditingProfile(true);
+                            setProfileNameInput("");
+                            setIsEditingProfile(false);
                           }}
-                          className="mt-6 bg-sky-500 text-white font-semibold px-5 py-3 rounded-xl hover:bg-sky-600"
+                          className="
+                            bg-slate-100
+                            text-slate-600
+                            font-semibold
+                            px-5
+                            py-3
+                            rounded-xl
+                            hover:bg-slate-200
+                          "
                         >
-                          Edit Profile
+                          Cancel
                         </button>
-                        <button
-                          type="button"
-                          onClick={handleDeleteProfile}
-                          className="mt-3 border border-red-200 text-red-600 font-semibold px-5 py-3 rounded-xl hover:bg-red-50"
-                        >
-                          Delete Profile
-                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <h2 className="text-3xl font-bold text-sky-950">
+                        {userProfile.name}
+                      </h2>
 
-                      </>
-                    )}
-                  </div>
+                      {/* User ID */}
+                      <div className="mt-6">
+                        <p className="text-sm font-semibold text-sky-700">
+                          User ID
+                        </p>
+
+                        <p className="text-sm text-slate-500 mt-1 break-all">
+                          {activeAccountId}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setProfileNameInput(
+                            userProfile.name
+                          );
+
+                          setIsEditingProfile(true);
+                        }}
+                        className="
+                          mt-6
+                          bg-sky-500
+                          text-white
+                          font-semibold
+                          px-5
+                          py-3
+                          rounded-xl
+                          hover:bg-sky-600
+                        "
+                      >
+                        Edit Name
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
+{/* Penguin Customizer */}
+{showPenguinCustomizer && (
+  <div className="mt-8 pt-8 border-t border-sky-100">
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <h3 className="text-xl font-bold text-sky-950">
+          Customize Your Penguin
+        </h3>
+
+        <p className="text-sm text-slate-500 mt-1">
+          Make your penguin your own.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={() =>
+          setShowPenguinCustomizer(false)
+        }
+        className="text-slate-400 hover:text-slate-700 text-2xl"
+        aria-label="Close penguin customization"
+      >
+        ×
+      </button>
+    </div>
+
+    {/* Penguin Colour */}
+<div className="mt-6">
+  <p className="text-sm font-bold text-sky-950 mb-3">
+    Penguin Colour
+  </p>
+
+  <div className="flex flex-wrap gap-3">
+    {PENGUIN_BODY_COLOURS.map((colour) => (
+      <button
+        key={colour.id}
+        type="button"
+        onClick={() =>
+          updatePenguinCustomization({
+            bodyColour: colour.id,
+          })
+        }
+        title={colour.label}
+        aria-label={`${colour.label} penguin`}
+        className={`w-12 h-12 rounded-full border-4 transition ${
+          penguinCustomization.bodyColour ===
+          colour.id
+            ? "border-sky-700 scale-110"
+            : "border-white shadow"
+        }`}
+        style={{
+          backgroundColor: colour.value,
+        }}
+      />
+    ))}
+  </div>
+</div>
+
+{/* Glasses */}
+<div className="mt-7">
+  <p className="text-sm font-bold text-sky-950 mb-3">
+    Glasses
+  </p>
+
+  <div className="flex flex-wrap items-center gap-3">
+
+    {/* No Glasses */}
+    <button
+      type="button"
+      onClick={() =>
+        updatePenguinCustomization({
+          glassesColour: "none",
+        })
+      }
+      className={`h-11 px-4 rounded-xl border text-sm font-semibold transition ${
+        penguinCustomization.glassesColour === "none"
+          ? "bg-sky-100 border-sky-500 text-sky-800"
+          : "bg-white border-sky-200 text-slate-600 hover:bg-sky-50"
+      }`}
+    >
+      No Glasses
+    </button>
+
+    {/* Glasses Colours */}
+    {ACCESSORY_COLOURS.map((colour) => (
+      <button
+        key={colour.id}
+        type="button"
+        onClick={() =>
+          updatePenguinCustomization({
+            glassesColour: colour.id,
+          })
+        }
+        title={`${colour.label} glasses`}
+        aria-label={`${colour.label} glasses`}
+        className={`w-11 h-11 rounded-full border-4 transition ${
+          penguinCustomization.glassesColour ===
+          colour.id
+            ? "border-sky-700 scale-110"
+            : "border-white shadow"
+        }`}
+        style={{
+          backgroundColor: colour.value,
+        }}
+      />
+    ))}
+  </div>
+</div>
+
+  </div>
+)}
+
+              {/* Delete Profile */}
+              <div className="mt-8 pt-6 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={handleDeleteProfile}
+                  className="
+                    border
+                    border-red-200
+                    text-red-600
+                    font-semibold
+                    px-5
+                    py-3
+                    rounded-xl
+                    hover:bg-red-50
+                  "
+                >
+                  Delete Profile
+                </button>
+              </div>
+
             </div>
           </div>
-        );
+        </div>
+      );
 
       default:
         return (
@@ -770,29 +1612,7 @@ useEffect(() => {
       <Navigation
         activeTab={activeTab}
         setActiveTab={setActiveTab}
-        accounts={accounts}
-        activeAccountId={activeAccountId}
-        setActiveAccountId={(id) => {
-          setActiveAccountId(id);
-          localStorage.setItem(ACTIVE_ACCOUNT_KEY, id);
-          setActiveTab("home");
-          setShowWelcome(false);
-        }}
-        onCreateAccount={() => {
-          const id = makeAccountId();
-          const newAcc = { id, name: "New User", createdAt: Date.now() };
-          const next = [newAcc, ...accounts];
-
-          setAccounts(next);
-          localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(next));
-
-          setActiveAccountId(id);
-          localStorage.setItem(ACTIVE_ACCOUNT_KEY, id);
-
-          setShowWelcome(false);
-          setOnboardingComplete(false);
-          setActiveTab("coach");
-        }}
+        onLogout={handleLogout}
       />
 
       <main className="flex-1 min-h-screen lg:ml-0 overflow-y-auto relative bg-transparent">
@@ -803,3 +1623,4 @@ useEffect(() => {
 };
 
 export default App;
+

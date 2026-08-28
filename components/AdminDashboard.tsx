@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import AdminTranscripts from "./AdminTranscripts";
 
 import {
   getUsageEvents,
@@ -7,13 +8,46 @@ import {
 
 interface Account {
   id: string;
-  name: string;
   createdAt: number;
 }
 
 interface AdminDashboardProps {
   accounts: Account[];
 }
+
+interface CommunityPost {
+  id: string;
+  authorId: string;
+  topics?: string[];
+  category?: string;
+  text: string;
+  createdAt: string;
+  updatedAt?: string;
+  helpfulBy?: string[];
+}
+
+const COMMUNITY_STORAGE_KEY =
+  "behaviour_change_community_posts";
+
+const loadCommunityPosts = (): CommunityPost[] => {
+  const saved = localStorage.getItem(
+    COMMUNITY_STORAGE_KEY
+  );
+
+  if (!saved) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(saved);
+
+    return Array.isArray(parsed)
+      ? parsed
+      : [];
+  } catch {
+    return [];
+  }
+};
 
 const workshops = [
   {
@@ -46,6 +80,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setSelectedParticipantId,
   ] = useState<string | null>(null);
 
+  const [
+    communityPosts,
+    setCommunityPosts,
+  ] = useState<CommunityPost[]>(
+    loadCommunityPosts
+  );
+
+  const [
+    communityPostToDelete,
+    setCommunityPostToDelete,
+  ] = useState<CommunityPost | null>(null);
+
   const refreshEvents = () => {
     setEvents(getUsageEvents());
   };
@@ -73,6 +119,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
     };
   }, []);
+
+  useEffect(() => {
+  const refreshCommunityPosts = () => {
+    setCommunityPosts(
+      loadCommunityPosts()
+    );
+  };
+
+  window.addEventListener(
+    "storage",
+    refreshCommunityPosts
+  );
+
+  window.addEventListener(
+    "behaviour-change-community-updated",
+    refreshCommunityPosts
+  );
+
+  return () => {
+    window.removeEventListener(
+      "storage",
+      refreshCommunityPosts
+    );
+
+    window.removeEventListener(
+      "behaviour-change-community-updated",
+      refreshCommunityPosts
+    );
+  };
+}, []);
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -107,6 +183,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     (event) =>
       event.type === "page_viewed" &&
       event.metadata?.page === "calendar"
+  ).length;
+
+  const activitiesAdded = events.filter(
+    (event) =>
+      event.type === "calendar_activity_added"
+  ).length;
+
+  const activitiesCompleted = events.filter(
+    (event) =>
+      event.type === "calendar_activity_completed"
+  ).length;
+
+  const activitiesMissed = events.filter(
+    (event) =>
+      event.type === "calendar_activity_missed"
+  ).length;
+
+  const goalsSet = events.filter(
+    (event) =>
+      event.type === "goal_set"
+  ).length;
+
+  const goalEdits = events.filter(
+    (event) =>
+      event.type === "goal_edited"
+  ).length;
+
+  const goalsCompleted = events.filter(
+    (event) =>
+      event.type === "goal_completed"
   ).length;
 
   const pageViews = events.filter(
@@ -163,6 +269,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         (event) =>
           event.type === "page_viewed" &&
           event.metadata?.page === "calendar"
+      ).length,
+
+      activitiesAdded: userEvents.filter(
+        (event) =>
+          event.type === "calendar_activity_added"
+      ).length,
+
+      activitiesCompleted: userEvents.filter(
+        (event) =>
+          event.type === "calendar_activity_completed"
+      ).length,
+
+      activitiesMissed: userEvents.filter(
+        (event) =>
+          event.type === "calendar_activity_missed"
+      ).length,
+
+      goalsSet: userEvents.filter(
+        (event) =>
+          event.type === "goal_set"
+      ).length,
+
+      goalEdits: userEvents.filter(
+        (event) =>
+          event.type === "goal_edited"
+      ).length,
+
+      goalsCompleted: userEvents.filter(
+        (event) =>
+          event.type === "goal_completed"
       ).length,
 
       pageViews: userEvents.filter(
@@ -250,6 +386,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           event.metadata?.workshop ?? "a workshop"
         }`;
 
+        case "calendar_activity_added":
+          return "Added a calendar activity";
+
+        case "calendar_activity_completed":
+          return "Completed a calendar activity";
+
+        case "calendar_activity_missed":
+          return "Missed a calendar activity";
+
+        case "goal_set":
+          return "Set a weekly goal";
+
+        case "goal_edited":
+          return "Edited their weekly goal";
+
+        case "goal_completed":
+          return "Completed their weekly goal";
+
+
       case "page_viewed":
         if (event.metadata?.page === "calendar") {
           return "Opened the Calendar";
@@ -268,22 +423,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const headers = [
       "Event ID",
       "Participant ID",
-      "Participant Name",
       "Event Type",
       "Timestamp",
       "Metadata",
     ];
 
     const rows = events.map((event) => {
-      const participant =
-        accounts.find(
-          (account) => account.id === event.userId
-        )?.name ?? "Unknown";
 
       return [
         event.id,
         event.userId,
-        participant,
         event.type,
         event.timestamp,
         JSON.stringify(event.metadata ?? {}),
@@ -321,6 +470,100 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     URL.revokeObjectURL(url);
   };
+
+  const exportParticipantMetricsCsv = () => {
+    const headers = [
+      "Participant ID",
+      "App Opens",
+      "AI Coach Interactions",
+      "Resource Views",
+      "Calendar Opens",
+      "Activities Added",
+      "Activities Completed",
+      "Activities Missed",
+      "Goals Set",
+      "Goal Edits",
+      "Goals Completed",
+      "Workshops Completed",
+      "Page Views",
+      "Last Active",
+    ];
+
+    const rows = accounts.map((account) => {
+      const metrics = getParticipantMetrics(account);
+
+      return [
+        account.id,
+        metrics.appOpens,
+        metrics.coachInteractions,
+        metrics.resourceViews,
+        metrics.calendarOpens,
+        metrics.activitiesAdded,
+        metrics.activitiesCompleted,
+        metrics.activitiesMissed,
+        metrics.goalsSet,
+        metrics.goalEdits,
+        metrics.goalsCompleted,
+        metrics.completedWorkshops,
+        metrics.pageViews,
+        metrics.lastActive,
+      ];
+    });
+
+    const csv = [headers, ...rows]
+      .map((row) =>
+        row
+          .map(
+            (value) =>
+              `"${String(value).replace(/"/g, '""')}"`
+          )
+          .join(",")
+      )
+      .join("\n");
+
+    const blob = new Blob([csv], {
+      type: "text/csv;charset=utf-8;",
+    });
+
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement("a");
+
+    link.href = url;
+
+    link.download = `behaviour-change-participant-metrics-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+
+    link.click();
+
+    URL.revokeObjectURL(url);
+  };
+
+const handleAdminDeleteCommunityPost = (
+  postId: string
+) => {
+  const updatedPosts =
+    communityPosts.filter(
+      (post) => post.id !== postId
+    );
+
+  setCommunityPosts(updatedPosts);
+
+  localStorage.setItem(
+    COMMUNITY_STORAGE_KEY,
+    JSON.stringify(updatedPosts)
+  );
+
+  window.dispatchEvent(
+    new Event(
+      "behaviour-change-community-updated"
+    )
+  );
+
+  setCommunityPostToDelete(null);
+};
+
 
   // =========================
   // PARTICIPANT DETAIL VIEW
@@ -369,20 +612,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               Participant Details
             </p>
 
-            <h1 className="text-3xl font-bold text-sky-950 mt-2">
-              {participant.name}
+            <h1 className="text-3xl font-bold text-sky-950 mt-2 break-all">
+              Participant ID: {participant.id}
             </h1>
 
-            <p className="text-sm text-sky-700 mt-2 break-all">
-              Participant ID: {participant.id}
-            </p>
 
             <p className="text-sm text-sky-700 mt-1">
               Last active: {metrics.lastActive}
             </p>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
 
             <MetricCard
               label="App Opens"
@@ -405,11 +645,60 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             />
 
             <MetricCard
+              label="Activities Added"
+              value={metrics.activitiesAdded}
+            />
+
+            <MetricCard
+              label="Activities Completed"
+              value={metrics.activitiesCompleted}
+            />
+
+            <MetricCard
+              label="Activities Missed"
+              value={metrics.activitiesMissed}
+            />
+
+            <MetricCard
               label="Page Views"
               value={metrics.pageViews}
             />
 
           </div>
+
+
+          <div className="bg-white rounded-3xl border border-sky-100 shadow-sm p-6 mb-8">
+
+          <div className="mb-5">
+            <h2 className="text-xl font-bold text-sky-950">
+              Goal Setting
+            </h2>
+
+            <p className="text-sm text-sky-700 mt-1">
+              Weekly goal engagement and completion.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+            <MetricCard
+              label="Goals Set"
+              value={metrics.goalsSet}
+            />
+
+            <MetricCard
+              label="Goal Edits"
+              value={metrics.goalEdits}
+            />
+
+            <MetricCard
+              label="Goals Completed"
+              value={metrics.goalsCompleted}
+            />
+
+          </div>
+
+        </div>
 
           <div className="bg-white rounded-3xl border border-sky-100 shadow-sm p-6 mb-8">
 
@@ -524,6 +813,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               </p>
             </div>
 
+            <div className="flex flex-col sm:flex-row gap-3">
+
             <button
               type="button"
               onClick={exportCsv}
@@ -531,6 +822,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             >
               Export Usage Data
             </button>
+
+            <button
+              type="button"
+              onClick={exportParticipantMetricsCsv}
+              className="bg-sky-500 text-white font-semibold px-5 py-3 rounded-xl hover:bg-sky-600"
+            >
+              Export Participant Metrics
+            </button>
+
+          </div>
 
           </div>
         </div>
@@ -571,6 +872,74 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             label="Calendar Opens"
             value={calendarOpens}
           />
+
+        </div>
+
+        {/* Overall Calendar Activity */}
+        <div className="bg-white rounded-3xl border border-sky-100 shadow-sm p-6 mb-8">
+
+          <div className="mb-5">
+            <h2 className="text-xl font-bold text-sky-950">
+              Calendar Activity
+            </h2>
+
+            <p className="text-sm text-sky-700 mt-1">
+              Overall participant activity planning and completion.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+            <MetricCard
+              label="Activities Added"
+              value={activitiesAdded}
+            />
+
+            <MetricCard
+              label="Activities Completed"
+              value={activitiesCompleted}
+            />
+
+            <MetricCard
+              label="Activities Missed"
+              value={activitiesMissed}
+            />
+
+          </div>
+
+        </div>
+
+        {/* Overall Goal Setting */}
+        <div className="bg-white rounded-3xl border border-sky-100 shadow-sm p-6 mb-8">
+
+          <div className="mb-5">
+            <h2 className="text-xl font-bold text-sky-950">
+              Goal Setting
+            </h2>
+
+            <p className="text-sm text-sky-700 mt-1">
+              Overall weekly goal engagement and completion.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
+            <MetricCard
+              label="Goals Set"
+              value={goalsSet}
+            />
+
+            <MetricCard
+              label="Goal Edits"
+              value={goalEdits}
+            />
+
+            <MetricCard
+              label="Goals Completed"
+              value={goalsCompleted}
+            />
+
+          </div>
 
         </div>
 
@@ -638,9 +1007,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       className="border-t border-sky-50 hover:bg-sky-50/50"
                     >
                       <td className="px-6 py-4">
-                        <p className="font-semibold text-sky-950">
-                          {account.name}
-                        </p>
+      
 
                         <p className="text-xs text-slate-400 mt-1">
                           {account.id}
@@ -693,8 +1060,237 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
           </div>
         </div>
+      
+          
+          {/* Community Moderation */}
+<div className="mt-8 bg-white rounded-3xl border border-sky-100 shadow-sm overflow-hidden">
+
+  <div className="p-6 border-b border-sky-100">
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div>
+        <h2 className="text-xl font-bold text-sky-950">
+          Community Moderation
+        </h2>
+
+        <p className="text-sm text-sky-700 mt-1">
+          Review Community tips and remove posts
+          when moderation is required.
+        </p>
+      </div>
+
+      <span className="text-sm font-semibold text-sky-700 bg-sky-50 border border-sky-100 px-3 py-2 rounded-xl">
+        {communityPosts.length}{" "}
+        {communityPosts.length === 1
+          ? "post"
+          : "posts"}
+      </span>
+    </div>
+  </div>
+
+  {communityPosts.length === 0 ? (
+    <div className="p-8 text-center">
+      <p className="font-semibold text-slate-500">
+        No Community posts yet.
+      </p>
+
+      <p className="text-sm text-slate-400 mt-1">
+        Participant tips will appear here.
+      </p>
+    </div>
+  ) : (
+    <div className="divide-y divide-sky-50">
+      {[...communityPosts]
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() -
+            new Date(a.createdAt).getTime()
+        )
+        .map((post) => {
+          const postTopics =
+            post.topics &&
+            post.topics.length > 0
+              ? post.topics
+              : post.category
+                ? [post.category]
+                : [];
+
+          return (
+            <div
+              key={post.id}
+              className="p-5 md:p-6"
+            >
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+
+                <div className="min-w-0 flex-1">
+
+                  {/* Participant ID */}
+                  <p className="text-xs font-semibold text-slate-400 break-all">
+                    Participant ID:{" "}
+                    {post.authorId}
+                  </p>
+
+                  {/* Topics */}
+                  {postTopics.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-3">
+                      {postTopics.map(
+                        (topic) => (
+                          <span
+                            key={topic}
+                            className="text-xs font-semibold text-sky-700 bg-sky-50 border border-sky-100 px-2.5 py-1 rounded-full"
+                          >
+                            {topic}
+                          </span>
+                        )
+                      )}
+                    </div>
+                  )}
+
+                  {/* Post */}
+                  <p className="text-slate-700 mt-4 whitespace-pre-wrap break-words">
+                    {post.text}
+                  </p>
+
+                  {/* Metadata */}
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mt-4 text-xs text-slate-400">
+                    <span>
+                      Posted{" "}
+                      {new Date(
+                        post.createdAt
+                      ).toLocaleString()}
+                    </span>
+
+                    {post.updatedAt && (
+                      <span>
+                        Edited{" "}
+                        {new Date(
+                          post.updatedAt
+                        ).toLocaleString()}
+                      </span>
+                    )}
+
+                    <span>
+                      Helpful:{" "}
+                      {post.helpfulBy?.length ?? 0}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Admin Delete */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCommunityPostToDelete(
+                      post
+                    )
+                  }
+                  className="
+                    shrink-0
+                    border
+                    border-red-200
+                    text-red-600
+                    font-semibold
+                    text-sm
+                    px-4
+                    py-2.5
+                    rounded-xl
+                    hover:bg-red-50
+                  "
+                >
+                  Delete
+                </button>
+
+              </div>
+            </div>
+          );
+        })}
+    </div>
+  )}
+</div>
+
+
+          {/* Chat Transcripts */}
+          <div className="mt-8">
+            <AdminTranscripts accounts={accounts} />
+          </div>
+
 
       </div>
+
+
+{/* Admin Community Delete Confirmation */}
+{communityPostToDelete && (
+  <div className="fixed inset-0 z-[100] bg-black/30 flex items-center justify-center p-4">
+
+    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+
+      <h2 className="text-xl font-bold text-sky-950">
+        Delete this Community tip?
+      </h2>
+
+      <p className="text-sm text-slate-500 mt-2">
+        This will permanently remove the tip
+        for all participants.
+      </p>
+
+      <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 mt-4">
+
+        <p className="text-xs font-semibold text-slate-400 mb-2 break-all">
+          Participant ID:{" "}
+          {communityPostToDelete.authorId}
+        </p>
+
+        <p className="text-sm text-slate-700 whitespace-pre-wrap">
+          {communityPostToDelete.text}
+        </p>
+
+      </div>
+
+      <div className="flex justify-end gap-3 mt-6">
+
+        <button
+          type="button"
+          onClick={() =>
+            setCommunityPostToDelete(null)
+          }
+          className="
+            bg-slate-100
+            text-slate-600
+            font-semibold
+            px-5
+            py-3
+            rounded-xl
+            hover:bg-slate-200
+          "
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={() =>
+            handleAdminDeleteCommunityPost(
+              communityPostToDelete.id
+            )
+          }
+          className="
+            bg-red-500
+            text-white
+            font-semibold
+            px-5
+            py-3
+            rounded-xl
+            hover:bg-red-600
+          "
+        >
+          Yes, Delete Tip
+        </button>
+
+      </div>
+
+    </div>
+  </div>
+)}
+
     </div>
   );
 };

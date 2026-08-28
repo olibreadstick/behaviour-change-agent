@@ -180,6 +180,58 @@ const Home: React.FC<HomeProps> = ({
             </p>
           </button>
 
+          {/* Community */}
+          <button
+            type="button"
+            onClick={() =>
+              setActiveTab("community")
+            }
+            className="text-left bg-white border border-sky-100 rounded-3xl p-6 shadow-sm hover:shadow-md hover:border-sky-200 transition-all"
+          >
+            <p className="text-sm font-semibold text-sky-500">
+              Connect
+            </p>
+
+            <h2 className="text-xl font-bold text-sky-950 mt-2">
+              Community
+            </h2>
+
+            <p className="text-sky-700 mt-3">
+              Share and discover tips from others about strategies
+              that support physical activity.
+            </p>
+
+            <p className="text-sky-600 font-semibold mt-5">
+              Explore Community →
+            </p>
+          </button>
+
+          {/* Goals */}
+          <button
+            type="button"
+            onClick={() =>
+              setActiveTab("goals")
+            }
+            className="text-left bg-white border border-sky-100 rounded-3xl p-6 shadow-sm hover:shadow-md hover:border-sky-200 transition-all"
+          >
+            <p className="text-sm font-semibold text-sky-500">
+              Goal Setting
+            </p>
+
+            <h2 className="text-xl font-bold text-sky-950 mt-2">
+              Weekly Goals
+            </h2>
+
+            <p className="text-sky-700 mt-3">
+              Set a physical activity goal for the week and keep
+              track of what you are working toward.
+            </p>
+
+            <p className="text-sky-600 font-semibold mt-5">
+              View Goals →
+            </p>
+          </button>
+
           {/* Calendar */}
           <button
             type="button"
