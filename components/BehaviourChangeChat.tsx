@@ -252,7 +252,12 @@ const BehaviourChangeChat: React.FC<BehaviourChangeChatProps> = ({
     };
   });
 
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(() => {
+    const draftKey = `behaviour_change_chat_draft_${userId}`;
+    const draft = sessionStorage.getItem(draftKey) || "";
+    sessionStorage.removeItem(draftKey);
+    return draft;
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);

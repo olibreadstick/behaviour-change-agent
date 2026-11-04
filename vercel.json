@@ -1,0 +1,22 @@
+{
+  "framework": null,
+  "installCommand": "npm ci && npm --prefix mobile ci",
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "redirects": [
+    { "source": "/admin", "destination": "/admin/", "permanent": false }
+  ],
+  "rewrites": [
+    { "source": "/admin/:path*", "destination": "/admin/index.html" },
+    { "source": "/:path*", "destination": "/index.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" }
+      ]
+    }
+  ]
+}

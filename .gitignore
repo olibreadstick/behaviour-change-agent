@@ -8,6 +8,7 @@ node_modules/
 
 # build output
 dist/
+dist-admin/
 build/
 .next/
 out/
@@ -27,6 +28,7 @@ dist/
 .vite/
 .vercel
 .env*
+!**/.env.example
 
 # Spring backend generated and sensitive files
 backend/target/

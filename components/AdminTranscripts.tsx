@@ -46,18 +46,25 @@ const AdminTranscripts: React.FC<AdminTranscriptsProps> = ({
     const storageKey = `behaviour_change_chat_${userId}`;
     const saved = localStorage.getItem(storageKey);
 
-    if (!saved) {
-      setConversations([]);
-      setSelectedConversationId(null);
-      return;
-    }
-
     try {
-      const parsed = JSON.parse(saved) as SavedChatState;
+      const parsed = JSON.parse(saved || '{}') as SavedChatState;
+      const mobileSaved = localStorage.getItem(`behaviour_change_mobile_${userId}`);
+      const mobile = JSON.parse(mobileSaved || '{}');
+      const mobileConversations: Conversation[] = Array.isArray(mobile.conversations)
+        ? mobile.conversations.map((conversation: any) => ({
+            ...conversation,
+            title: `Daily Coach · ${conversation.title}`,
+            started: conversation.messages?.length > 0,
+            createdAt: conversation.messages?.[0]?.createdAt || mobile.updatedAt,
+            updatedAt: conversation.messages?.at(-1)?.createdAt || mobile.updatedAt,
+            messages: (conversation.messages || []).filter((message: any) => !message.failed),
+          }))
+        : [];
 
-      if (Array.isArray(parsed.conversations)) {
+      if (Array.isArray(parsed.conversations) || mobileConversations.length) {
         const sortedConversations = [
-          ...parsed.conversations,
+          ...(Array.isArray(parsed.conversations) ? parsed.conversations.filter(conversation => !mobileConversations.some(current => current.id === conversation.id || current.sessionId === conversation.sessionId)) : []),
+          ...mobileConversations,
         ].sort(
           (a, b) =>
             new Date(b.updatedAt).getTime() -

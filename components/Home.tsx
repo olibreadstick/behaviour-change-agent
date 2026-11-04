@@ -1,267 +1,28 @@
 import React, { useEffect, useState } from "react";
-
-interface HomeProps {
-  userId: string;
-  userName: string;
-  setActiveTab: (tab: string) => void;
-}
-
-interface WorkshopProgress {
-  status: "not_started" | "in_progress" | "completed";
-  updatedAt: string | null;
-}
-
-const Home: React.FC<HomeProps> = ({
-  userId,
-  userName,
-  setActiveTab,
-}) => {
-  const [completedWorkshops, setCompletedWorkshops] =
-    useState(0);
-
+import { goalEventName, loadGoals, StoredGoal } from "./goalStore";
+interface HomeProps { userId: string; userName: string; setActiveTab: (tab: string) => void }
+const Home: React.FC<HomeProps> = ({ userId, userName, setActiveTab }) => {
+  const [goals, setGoals] = useState<StoredGoal[]>([]);
   useEffect(() => {
-    const storageKey =
-      `behaviour_change_workshop_progress_${userId}`;
-
-    const saved = localStorage.getItem(storageKey);
-
-    if (!saved) {
-      setCompletedWorkshops(0);
-      return;
-    }
-
-    try {
-      const progress: Record<
-        string,
-        WorkshopProgress
-      > = JSON.parse(saved);
-
-      const completed = Object.values(
-        progress
-      ).filter(
-        (item) => item.status === "completed"
-      ).length;
-
-      setCompletedWorkshops(completed);
-    } catch {
-      setCompletedWorkshops(0);
-    }
+    const refresh = () => setGoals(loadGoals(userId)); refresh();
+    window.addEventListener(goalEventName, refresh);
+    window.addEventListener("storage", refresh);
+    return () => { window.removeEventListener(goalEventName, refresh); window.removeEventListener("storage", refresh); };
   }, [userId]);
-
-  const progressPercent =
-    (completedWorkshops / 4) * 100;
-
-  return (
-    <div className="min-h-screen bg-sky-50 p-6 lg:p-12">
-      <div className="max-w-6xl mx-auto">
-
-        {/* Welcome */}
-        <div className="bg-sky-200 rounded-3xl p-7 mb-6 shadow-sm">
-          <p className="text-sm font-semibold text-sky-700">
-            Welcome back
-          </p>
-
-          <h1 className="text-3xl font-bold text-sky-950 mt-1">
-            {userName}
-          </h1>
-
-          <p className="text-sky-700 mt-3">
-            Continue your behaviour change journey or
-            choose what you would like support with today.
-          </p>
-        </div>
-
-        {/* Workshop progress */}
-        <div className="bg-white border border-sky-100 rounded-3xl p-6 shadow-sm mb-6">
-          <div className="flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-bold text-sky-950">
-                Your Progress
-              </h2>
-
-              <p className="text-sm text-sky-700 mt-1">
-                {completedWorkshops} of 4 workshop activities completed
-              </p>
-            </div>
-
-            <span className="text-xl font-bold text-sky-600">
-              {Math.round(progressPercent)}%
-            </span>
-          </div>
-
-          <div className="w-full bg-sky-100 rounded-full h-3 mt-4 overflow-hidden">
-            <div
-              className="bg-sky-500 h-3 rounded-full transition-all"
-              style={{
-                width: `${progressPercent}%`,
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Main options */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
-          {/* Workshop */}
-          <button
-            type="button"
-            onClick={() =>
-              setActiveTab("workshop")
-            }
-            className="text-left bg-white border border-sky-100 rounded-3xl p-6 shadow-sm hover:shadow-md hover:border-sky-200 transition-all"
-          >
-            <p className="text-sm font-semibold text-sky-500">
-              Workshops
-            </p>
-
-            <h2 className="text-xl font-bold text-sky-950 mt-2">
-              Workshop Activities
-            </h2>
-
-            <p className="text-sky-700 mt-3">
-              Access activities associated with your
-              workshops and continue your progress.
-            </p>
-
-            <p className="text-sky-600 font-semibold mt-5">
-              View Workshops →
-            </p>
-          </button>
-
-          {/* Daily Coach */}
-          <button
-            type="button"
-            onClick={() =>
-              setActiveTab("coach")
-            }
-            className="text-left bg-white border border-sky-100 rounded-3xl p-6 shadow-sm hover:shadow-md hover:border-sky-200 transition-all"
-          >
-            <p className="text-sm font-semibold text-sky-500">
-              Independent Support
-            </p>
-
-            <h2 className="text-xl font-bold text-sky-950 mt-2">
-              Daily AI Coach
-            </h2>
-
-            <p className="text-sky-700 mt-3">
-              Get support with your physical activity
-              goals whenever you need it.
-            </p>
-
-            <p className="text-sky-600 font-semibold mt-5">
-              Talk to the Coach →
-            </p>
-          </button>
-
-          {/* Resources */}
-          <button
-            type="button"
-            onClick={() =>
-              setActiveTab("resources")
-            }
-            className="text-left bg-white border border-sky-100 rounded-3xl p-6 shadow-sm hover:shadow-md hover:border-sky-200 transition-all"
-          >
-            <p className="text-sm font-semibold text-sky-500">
-              Learn
-            </p>
-
-            <h2 className="text-xl font-bold text-sky-950 mt-2">
-              BCT Resources
-            </h2>
-
-            <p className="text-sky-700 mt-3">
-              Learn about behaviour change techniques
-              that can support your physical activity.
-            </p>
-
-            <p className="text-sky-600 font-semibold mt-5">
-              Browse Resources →
-            </p>
-          </button>
-
-          {/* Community */}
-          <button
-            type="button"
-            onClick={() =>
-              setActiveTab("community")
-            }
-            className="text-left bg-white border border-sky-100 rounded-3xl p-6 shadow-sm hover:shadow-md hover:border-sky-200 transition-all"
-          >
-            <p className="text-sm font-semibold text-sky-500">
-              Connect
-            </p>
-
-            <h2 className="text-xl font-bold text-sky-950 mt-2">
-              Community
-            </h2>
-
-            <p className="text-sky-700 mt-3">
-              Share and discover tips from others about strategies
-              that support physical activity.
-            </p>
-
-            <p className="text-sky-600 font-semibold mt-5">
-              Explore Community →
-            </p>
-          </button>
-
-          {/* Goals */}
-          <button
-            type="button"
-            onClick={() =>
-              setActiveTab("goals")
-            }
-            className="text-left bg-white border border-sky-100 rounded-3xl p-6 shadow-sm hover:shadow-md hover:border-sky-200 transition-all"
-          >
-            <p className="text-sm font-semibold text-sky-500">
-              Goal Setting
-            </p>
-
-            <h2 className="text-xl font-bold text-sky-950 mt-2">
-              Weekly Goals
-            </h2>
-
-            <p className="text-sky-700 mt-3">
-              Set a physical activity goal for the week and keep
-              track of what you are working toward.
-            </p>
-
-            <p className="text-sky-600 font-semibold mt-5">
-              View Goals →
-            </p>
-          </button>
-
-          {/* Calendar */}
-          <button
-            type="button"
-            onClick={() =>
-              setActiveTab("calendar")
-            }
-            className="text-left bg-white border border-sky-100 rounded-3xl p-6 shadow-sm hover:shadow-md hover:border-sky-200 transition-all"
-          >
-            <p className="text-sm font-semibold text-sky-500">
-              Planning
-            </p>
-
-            <h2 className="text-xl font-bold text-sky-950 mt-2">
-              Activity Calendar
-            </h2>
-
-            <p className="text-sky-700 mt-3">
-              View your schedule and planned physical
-              activities.
-            </p>
-
-            <p className="text-sky-600 font-semibold mt-5">
-              Open Calendar →
-            </p>
-          </button>
-
-        </div>
-      </div>
+  const row = (label: string, detail: string, tab: string, icon: string) => <button type="button" onClick={()=>setActiveTab(tab)} className="w-full flex items-center gap-4 text-left py-5 border-b border-slate-100 last:border-b-0"><span className="text-2xl w-9 text-center text-sky-600">{icon}</span><span className="flex-1"><span className="block text-lg text-slate-900">{label}</span><span className="block text-sm text-slate-500 mt-1">{detail}</span></span><span aria-hidden="true" className="text-slate-400">›</span></button>;
+  return <div className="min-h-screen bg-[#fafafa] text-slate-900 px-5 pt-20 pb-28 lg:pt-12"><div className="max-w-2xl mx-auto">
+    <div className="flex items-center justify-center flex-col mb-10"><img src="/behaviour-logo.png" alt="Tie, your penguin coach" className="w-28 h-28 object-contain"/><span className="rounded-full bg-white px-5 py-2 border border-slate-100">Tie</span></div>
+    <p className="text-slate-500">Welcome back{userName && userName!=="New User" ? `, ${userName}`:""}</p><h1 className="text-4xl font-medium mt-2 mb-6">Your journey</h1>
+    <div className="bg-white rounded-3xl px-5 border border-slate-100">
+      {row("Create a goal","Talk with Tie about what matters to you", "create-goal", "+")}
+      {row("Create an action plan","Choose when, where and how", "action-plan", "▤")}
+      {row("Self-talk","Build a more supportive inner voice", "self-talk", "♡")}
     </div>
-  );
+    <section className="mt-9"><div className="flex justify-between items-center mb-3"><h2 className="text-2xl">Your goals</h2><button type="button" onClick={()=>setActiveTab("goals")} className="text-sky-700">View all</button></div>
+      <div className="bg-white rounded-3xl px-5 border border-slate-100">{goals.length===0?<p className="py-6 text-slate-500">No goals yet. Start a conversation with Tie to explore one, or add a goal in Goals.</p>:goals.map(g=><button type="button" key={g.id} onClick={()=>setActiveTab("goals")} className="w-full flex gap-3 items-center py-4 border-b border-slate-100 last:border-0 text-left"><span className="text-xl text-sky-600">{g.completed?"☑":"☐"}</span><span className="flex-1">{g.goal}</span><span className="text-slate-400">›</span></button>)}</div>
+    </section>
+    <section className="mt-9"><h2 className="text-2xl mb-3">Your learning path</h2><div className="bg-white rounded-3xl px-5 border border-slate-100">{row("Read the guides","Goal setting, planning, monitoring and self-talk", "resources", "▤")}{row("Community Hub","Share tips with other participants", "community", "♧")}{row("Explore your feed","Ideas related to your saved goals", "feed", "✦")}</div></section>
+    <button type="button" onClick={()=>setActiveTab("settings")} className="mt-8 text-slate-500 text-sm">⚙ Settings and accessibility</button>
+  </div></div>;
 };
-
 export default Home;

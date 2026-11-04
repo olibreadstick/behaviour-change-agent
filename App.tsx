@@ -1,12 +1,9 @@
 import "./services/cloudPersistence";
 import React, { useState, useEffect } from "react";
 import Navigation from "./components/Navigation";
-import DiscoverySwipe from "./components/DiscoverySwipe";
 import BehaviourChangeChat from "./components/BehaviourChangeChat";
 import Onboarding from "./components/Onboarding";
-import { DiscoveryItem, DiscoveryType, CollabRequest } from "./types";
 import type { UserProfile } from "./types";
-import Calendar from "./components/Calendar";
 import Resources from "./components/Resources";
 import Workshop from "./components/Workshop";
 import CommunityBoard from "./components/CommunityBoard";
@@ -14,6 +11,8 @@ import AdminDashboard from "./components/AdminDashboard";
 import GoalSetting from "./components/GoalSetting";
 import { logUsageEvent } from "./utils/usageTracking";
 import Home from "./components/Home";
+import Feed from "./components/Feed";
+import Settings from "./components/Settings";
 import Login from "./components/Login";
 import {
   loginParticipant,
@@ -32,11 +31,9 @@ import {
   saveParticipantProfile,
 } from "./services/profile";
 
+// Retain the original account storage key to preserve existing participant sessions.
 const ACCOUNTS_KEY = "uc_accounts";
 const ACTIVE_ACCOUNT_KEY = "uc_active_account";
-const GLOBAL_COLLABS_KEY = "uc_global_collabs";
-
-const heartsKey = (id: string) => `uc_hearted_${id}`;
 
 type Account = { id: string; name: string; createdAt: number };
 
@@ -82,20 +79,6 @@ const AUTH_SESSION_KEY =
   "support_agent_auth_session";
 
 
-
-const COLLAB_GOALS = [
-  "Looking for a lab partner?",
-  "Searching for a capstone team?",
-  "Need a study group?",
-  "Just browsing campus events?",
-];
-
-const CREATE_TYPES = [
-  { id: DiscoveryType.COLLAB_REQUEST, label: "Collaboration Request" },
-  { id: DiscoveryType.EVENT, label: "Event" },
-  { id: DiscoveryType.CLUB, label: "Club / Org" },
-  { id: DiscoveryType.NETWORKING, label: "Networking" },
-] as const;
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState("home");
@@ -195,61 +178,14 @@ const PENGUIN_BODY_COLOURS = [
 ] as const;
 
 
-  const [newReqType, setNewReqType] = useState<DiscoveryType>(
-    DiscoveryType.COLLAB_REQUEST,
-  );
-
-  const defaultImageFor = (t: DiscoveryType) => {
-    switch (t) {
-      case DiscoveryType.COLLAB_REQUEST:
-      case DiscoveryType.PARTNER:
-        return "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&q=80&w=800";
-      case DiscoveryType.EVENT:
-        return "https://images.unsplash.com/photo-1517245386807-bb43f82c33c4?auto=format&fit=crop&q=80&w=800";
-      case DiscoveryType.CLUB:
-        return "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&q=80&w=800";
-      case DiscoveryType.NETWORKING:
-        return "https://images.unsplash.com/photo-1521791136064-7986c2920216?auto=format&fit=crop&q=80&w=800";
-      default:
-        return "https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&fit=crop&q=80&w=800";
-    }
-  };
-
-  const [heartedItems, setHeartedItems] = useState<DiscoveryItem[]>([]);
-  const [collabRequests, setCollabRequests] = useState<CollabRequest[]>([]);
-  const [isCollabModalOpen, setIsCollabModalOpen] = useState(false);
-
-  const [newReqTitle, setNewReqTitle] = useState("");
-  const [newReqGoal, setNewReqGoal] = useState(COLLAB_GOALS[0]);
-  const [newReqSize, setNewReqSize] = useState(2);
-
-  const [newReqDescription, setNewReqDescription] = useState("");
-
-  //olivia
-  const [eventDate, setEventDate] = useState(""); // YYYY-MM-DD
-  const [eventTime, setEventTime] = useState(""); // HH:MM
-
-
 useEffect(() => {
-  const c = localStorage.getItem(
-    GLOBAL_COLLABS_KEY
-  );
-
-  setCollabRequests(
-    c ? JSON.parse(c) : []
-  );
-
-  const savedAccounts =
-    localStorage.getItem(ACCOUNTS_KEY);
-
-  const parsedAccounts: Account[] =
-    savedAccounts
-      ? JSON.parse(savedAccounts)
-      : [];
-
-  setAccounts(parsedAccounts);
+  const savedAccounts = localStorage.getItem(ACCOUNTS_KEY);
+  try {
+    setAccounts(savedAccounts ? JSON.parse(savedAccounts) : []);
+  } catch {
+    setAccounts([]);
+  }
 }, []);
-
 
 const handleAdminPasswordChange = async (
   event: React.FormEvent
@@ -345,21 +281,9 @@ useEffect(() => {
 
   useEffect(() => {
     if (!activeAccountId) return;
-
     let cancelled = false;
-
-    const h = localStorage.getItem(
-      heartsKey(activeAccountId)
-    );
-    const c = localStorage.getItem(
-      GLOBAL_COLLABS_KEY
-    );
-
-    setHeartedItems(h ? JSON.parse(h) : []);
-    setCollabRequests(c ? JSON.parse(c) : []);
     setUserProfile(null);
     setProfileSaveError("");
-
     const loadProfile = async () => {
       try {
         const profile =
@@ -446,33 +370,6 @@ useEffect(() => {
     };
   }, [activeAccountId]);
 
-
-  useEffect(() => {
-    const c = localStorage.getItem(GLOBAL_COLLABS_KEY);
-    setCollabRequests(c ? JSON.parse(c) : []);
-  }, []);
-
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === GLOBAL_COLLABS_KEY) {
-        setCollabRequests(e.newValue ? JSON.parse(e.newValue) : []);
-      }
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, []);
-
-  useEffect(() => {
-    if (!activeAccountId) return;
-    localStorage.setItem(
-      heartsKey(activeAccountId),
-      JSON.stringify(heartedItems),
-    );
-  }, [activeAccountId, heartedItems]);
-
-  useEffect(() => {
-    localStorage.setItem(GLOBAL_COLLABS_KEY, JSON.stringify(collabRequests));
-  }, [collabRequests]);
 
   useEffect(() => {
   if (!activeAccountId) return;
@@ -599,90 +496,6 @@ const handleProfileNameSave = async () => {
     );
   }
 };
-
-  const handleHeart = (item: DiscoveryItem) => {
-    if (!heartedItems.find((h) => h.id === item.id)) {
-      setHeartedItems((prev) => [...prev, item]);
-    }
-  };
-
-  {
-    /* olivia */
-  }
-  const submitRequest = () => {
-    if (!userProfile) return;
-
-    const isEvent = newReqType === DiscoveryType.EVENT;
-    const isCollab = newReqType === DiscoveryType.COLLAB_REQUEST;
-
-    const title =
-      newReqTitle ||
-      (isCollab ? newReqGoal : isEvent ? "New Event" : "New Broadcast");
-
-    const description = isEvent
-      ? newReqDescription?.trim() || `Event posted by ${userProfile.name}.`
-      : isCollab
-        ? `Project request by ${userProfile.name}. Target team size: ${newReqSize}.`
-        : `Posted by ${userProfile.name}.`;
-
-    {
-      /* olivia */
-    }
-    const newItem: CollabRequest = {
-      id: `req_${Date.now()}`,
-      type: newReqType,
-      title,
-      description,
-      tags: [userProfile.major, "Collaboration"],
-      creatorId: userProfile.id,
-      creatorName: userProfile.name,
-      creatorAvatar: userProfile.avatar || "",
-      participants: [],
-      image: defaultImageFor(newReqType),
-
-      targetGroupSize: isCollab ? newReqSize : undefined,
-
-      eventDate: isEvent ? eventDate : undefined,
-      eventTime: isEvent ? eventTime : undefined,
-    };
-
-    setCollabRequests((prev) => [newItem, ...prev]);
-
-    // reset modal state
-    setIsCollabModalOpen(false);
-    setNewReqTitle("");
-    setNewReqDescription("");
-    setEventDate("");
-    setEventTime("");
-    setNewReqType(DiscoveryType.COLLAB_REQUEST);
-    setActiveTab("discover");
-  };
-
-  const onToggleInterested = (requestId: string) => {
-    if (!activeAccountId) return;
-
-    setCollabRequests((prev) => {
-      const next = prev.map((r) => {
-        if (r.id !== requestId) return r;
-
-        const participants = Array.isArray(r.participants)
-          ? r.participants
-          : [];
-        const already = participants.includes(activeAccountId);
-
-        return {
-          ...r,
-          participants: already
-            ? participants.filter((id) => id !== activeAccountId)
-            : [...participants, activeAccountId],
-        };
-      });
-
-      localStorage.setItem(GLOBAL_COLLABS_KEY, JSON.stringify(next));
-      return next;
-    });
-  };
-
 
 const handleParticipantLogin = async (
   username: string,
@@ -886,11 +699,6 @@ const handleLogout = () => {
   
   
   
-  const needsDetails =
-    newReqType === DiscoveryType.EVENT ||
-    newReqType === DiscoveryType.NETWORKING ||
-    newReqType === DiscoveryType.CLUB;
-
   if (!authSession) {
     return (
       <Login
@@ -1183,9 +991,6 @@ if (
     }
 
     localStorage.removeItem(
-      heartsKey(activeAccountId)
-    );
-    localStorage.removeItem(
       `behaviour_change_session_${activeAccountId}`
     );
     localStorage.removeItem(
@@ -1260,38 +1065,29 @@ const updatePenguinCustomization = async (
 
 
 
+  const navigate = (tab: string) => {
+    const prompts: Record<string, string> = {
+      "create-goal": "I'd like to create a physical activity goal.",
+      "action-plan": "I'd like to make an action plan for one of my goals.",
+      "self-talk": "Can you help me practice supportive self-talk about physical activity?",
+    };
+    if (prompts[tab] && activeAccountId) {
+      sessionStorage.setItem(`behaviour_change_chat_draft_${activeAccountId}`, prompts[tab]);
+      setActiveTab("coach");
+    } else {
+      setActiveTab(tab);
+    }
+  };
+
   const renderContent = () => {
     switch (activeTab) {
-      case "discover":
-        return (
-          <div className="h-full flex flex-col items-start p-6 lg:p-12 animate-in fade-in zoom-in-95 duration-500">
-            <header className="w-full mb-6 px-8 py-6 text-left">
-              <span className="text-xs font-black text-white/80 uppercase tracking-[0.3em] mb-2 block">
-                Discovery
-              </span>
-              <h1 className="text-4xl lg:text-5xl font-black text-white tracking-tight">
-                Connect with McGill
-              </h1>
-            </header>
-
-            <div className="w-full flex-1">
-              <DiscoverySwipe
-                onHeart={handleHeart}
-                externalItems={collabRequests}
-                userInterests={userProfile.interests}
-                onToggleInterested={onToggleInterested}
-              />
-            </div>
-          </div>
-        );
-
       case "home":
       return (
         <Home
           key={activeAccountId}
           userId={activeAccountId!}
           userName={userProfile.name}
-          setActiveTab={setActiveTab}
+          setActiveTab={navigate}
         />
       );
 
@@ -1323,32 +1119,15 @@ const updatePenguinCustomization = async (
             userId={activeAccountId!}
           />
         );
+      case "feed":
+        return <Feed key={activeAccountId} userId={activeAccountId!} setActiveTab={navigate} />;
+      case "settings":
+        return <Settings userId={activeAccountId!} onLogout={handleLogout} setActiveTab={navigate} />;
       case "resources":
         return (
           <Resources
             userId={activeAccountId!}
           />
-        );
-
-      case "calendar":
-      return (
-        <div className="p-6 lg:p-12 pb-32 animate-in fade-in duration-500 bg-sky-50 min-h-screen">
-          <header className="mb-12 max-w-6xl mx-auto">
-            <span className="text-xs font-bold text-sky-600 uppercase tracking-[0.3em] mb-2 block">
-              Your Schedule
-            </span>
-            <h2 className="text-4xl lg:text-5xl font-black text-sky-950 tracking-tight">
-              Activity Calendar
-            </h2>
-          </header>
-            <Calendar
-              key={activeAccountId}
-              userId={activeAccountId!}
-              savedItems={heartedItems}
-              allItems={collabRequests}
-              onSaveItem={handleHeart}
-            />
-          </div>
         );
 
       case "profile":
@@ -1726,14 +1505,7 @@ const updatePenguinCustomization = async (
       );
 
       default:
-        return (
-          <DiscoverySwipe
-            userInterests={userProfile.interests}
-            onHeart={handleHeart}
-            externalItems={collabRequests}
-            onToggleInterested={onToggleInterested}
-          />
-        );
+        return <Home key={activeAccountId} userId={activeAccountId!} userName={userProfile.name} setActiveTab={navigate} />;
     }
   };
 
@@ -1741,7 +1513,7 @@ const updatePenguinCustomization = async (
     <div className="min-h-screen lg:flex bg-sky-50">
       <Navigation
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={navigate}
         onLogout={handleLogout}
       />
 

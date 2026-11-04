@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "Daily Coach",
+    "slug": "behaviour-change-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/behaviour-logo.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "ca.behaviourchange.dailycoach"
+    },
+    "android": {
+      "package": "ca.behaviourchange.dailycoach",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/behaviour-logo.png",
+        "backgroundColor": "#EAF6FA"
+      }
+    },
+    "web": {
+      "output": "single",
+      "bundler": "metro",
+      "favicon": "./assets/behaviour-logo.png"
+    }
+  }
+}

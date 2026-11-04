@@ -1,0 +1,238 @@
+[
+  {
+    "id": "goal_setting",
+    "title": "Goal Setting",
+    "subtitle": "Choose a meaningful, doable goal",
+    "resource": "goal-setting.pdf",
+    "lessons": [
+      {
+        "title": "Meet the three goal types",
+        "body": "Goal setting is about creating a clear target for what you want to work toward. \n\nThere are three types of goals:  \n• Learning goals focus on learning something or preparing for a behaviour. \n• Performance goals focus on doing a behaviour at a certain frequency, time, or amount. \n• Outcome goals focus on a result you want to work toward.  \n\nLet’s try a short example to make the difference clearer.",
+        "options": [
+          "Show me an example"
+        ]
+      },
+      {
+        "title": "A performance goal",
+        "body": "Here’s an example:  “I will go to the yoga studio twice per week, on Mondays and Wednesdays.”  What type of goal is this?",
+        "options": [
+          "Learning goal",
+          "Performance goal",
+          "Outcome goal"
+        ],
+        "correct": "Performance goal",
+        "hint": "Not quite — take another look at what the goal is focusing on.  Is it mainly about learning something, doing a behaviour at a specific frequency or amount, or working toward a result?",
+        "feedback": "Exactly — that is a Performance goal because it focuses on doing a behaviour at a specific frequency and on specific days."
+      },
+      {
+        "title": "A learning goal",
+        "body": "Here’s another example:  “I want to learn which exercises would be safe and suitable for me before I begin.”  What type of goal is this?",
+        "options": [
+          "Learning goal",
+          "Performance goal",
+          "Outcome goal"
+        ],
+        "correct": "Learning goal",
+        "hint": "Not quite — look again at what the person is trying to do.  Are they mainly trying to learn or prepare, carry out a behaviour at a certain frequency or amount, or work toward a result?  Choose the option that fits best.",
+        "feedback": "Exactly — that is a Learning goal because it focuses on learning or gathering information that can help prepare someone for the behaviour."
+      },
+      {
+        "title": "An outcome goal",
+        "body": "Here’s one final example:  “I want to improve my cardiovascular fitness so that I can complete a 5 km walk more comfortably.”  What type of goal is this?",
+        "options": [
+          "Learning goal",
+          "Performance goal",
+          "Outcome goal"
+        ],
+        "correct": "Outcome goal",
+        "hint": "Not quite — focus on the end result the person is hoping to achieve.  Is the goal mainly about learning something, doing a behaviour at a specific frequency or amount, or working toward a result?  Choose the option that fits best.",
+        "feedback": "Exactly — that is an Outcome goal because it focuses on a result the person wants to work toward."
+      }
+    ],
+    "practice": [
+      {
+        "title": "Choose your goal type",
+        "body": "Learning goals build knowledge or skills. Performance goals focus on doing a behaviour. Outcome goals focus on a result.",
+        "question": "Which type fits what you want to work toward?",
+        "field": "goal_type",
+        "options": [
+          "Learning goal",
+          "Performance goal",
+          "Outcome goal"
+        ]
+      },
+      {
+        "title": "Your goal",
+        "body": "Choose something that fits your own circumstances.",
+        "question": "What goal can I help you with today?",
+        "field": "goal"
+      },
+      {
+        "title": "What matters to you",
+        "body": "Your reasons can help you decide whether this goal fits.",
+        "question": "Why is this goal meaningful to you?",
+        "field": "meaning"
+      },
+      {
+        "title": "Check your confidence",
+        "body": "A smaller step is a useful place to begin.",
+        "question": "How confident do you feel about working toward this goal?",
+        "field": "confidence",
+        "options": [
+          "Low confidence",
+          "Some confidence",
+          "High confidence"
+        ]
+      },
+      {
+        "title": "Make it doable",
+        "body": "Think about energy, accessibility, time, and available support. You can revise the draft before saving.",
+        "question": "What makes this goal realistic for you, or what would you adjust?",
+        "field": "feasibility"
+      }
+    ]
+  },
+  {
+    "id": "action_planning_problem_solving",
+    "title": "Action Planning & Problem Solving",
+    "subtitle": "Turn your goal into a flexible plan",
+    "resource": "action-planning-problem-solving.pdf",
+    "lessons": [
+      {
+        "title": "Make a clear plan",
+        "body": "Action Planning helps you turn a physical activity goal into a specific plan by deciding what you will do, when you will do it, where you will do it, and how you will carry it out. \n\nProblem Solving helps you think ahead about things that might get in the way of your plan and decide what you could do if those barriers happen. \n\nTogether, they can help make your goal easier to put into practice.  \n\nWould you like to see an example, or go straight to making your own plan?",
+        "options": [
+          "Show me an example"
+        ]
+      },
+      {
+        "title": "The details that help",
+        "body": "Here are two ways someone could plan for the same physical activity goal:  Plan A: “I’ll try to walk more this week.”  Plan B: “I’ll walk around my neighborhood for 30 minutes on Monday, Wednesday, and Friday at 6 PM.”  Which one is the clearer action plan?",
+        "options": [
+          "Plan A",
+          "Plan B"
+        ],
+        "correct": "Plan B",
+        "hint": "Not quite — think about which plan gives the person clearer details about what they will do, when they will do it, where they will do it, and how they will carry it out.  Which plan is the clearer action plan?",
+        "feedback": "Exactly — Plan B is the clearer action plan because it specifies what the person will do, when they will do it, where they will do it, and how long they will do it for."
+      },
+      {
+        "title": "Prepare for a barrier",
+        "body": "Let’s build on the walking plan from the previous example.  The person plans to walk around their neighborhood for 30 minutes on Monday, Wednesday, and Friday at 6 PM.  They realize that bad weather might make it difficult to walk outside.  Which response is the clearer Problem Solving plan?  Plan A: “I’ll just hope the weather is good.”  Plan B: “If the weather is bad on a walking day, then I will walk indoors at the mall.”",
+        "options": [
+          "Plan A",
+          "Plan B"
+        ],
+        "correct": "Plan B",
+        "hint": "Not quite — think about which response actually prepares the person for the barrier instead of leaving it to chance.  Which option gives them a clear plan for what they will do if bad weather gets in the way?",
+        "feedback": "Exactly — Plan B is the clearer Problem Solving plan because it identifies what the person will do if the barrier happens. The if/then format makes the response to the barrier specific and easier to act on."
+      }
+    ],
+    "practice": [
+      {
+        "title": "What will you do?",
+        "body": "We’ll build on your confirmed goal.",
+        "question": "What activity or preparation step will you do?",
+        "field": "what"
+      },
+      {
+        "title": "Choose a time",
+        "body": "A time or cue can make a plan easier to remember.",
+        "question": "When will you do it?",
+        "field": "when"
+      },
+      {
+        "title": "Choose a place",
+        "body": "Consider where the plan is accessible and practical.",
+        "question": "Where will you do it?",
+        "field": "where"
+      },
+      {
+        "title": "Work out the details",
+        "body": "Consider duration, equipment, support, or how you will get started.",
+        "question": "How will you carry it out?",
+        "field": "how"
+      },
+      {
+        "title": "Think ahead",
+        "body": "Plans can change when circumstances change.",
+        "question": "What might get in the way?",
+        "field": "barrier"
+      },
+      {
+        "title": "Your if/then plan",
+        "body": "Prepare an alternative that fits the barrier you identified.",
+        "question": "If that happens, what will you do instead?",
+        "field": "alternative"
+      },
+      {
+        "title": "Choose a reminder",
+        "body": "Use a cue that fits into your day.",
+        "question": "What could remind you to use this plan?",
+        "field": "cue"
+      }
+    ]
+  },
+  {
+    "id": "self_monitoring",
+    "title": "Self-Monitoring",
+    "subtitle": "Notice what helps and adapt",
+    "resource": "self-monitoring.pdf",
+    "lessons": [
+      {
+        "title": "Track what is useful",
+        "body": "Self-Monitoring means keeping track of something that can help you understand your physical activity or your progress toward being more physically active. \n\nWhat you monitor can depend on where you are right now. If you are mainly thinking about or preparing for physical activity, you might track something useful during that preparation. If you are already being physically active, you might track something about the activity itself. \n\nA Self-Monitoring plan usually includes what you will track, how you will record it, when you will record it, and how often. \n\nWould you like to see an example, or go straight to making your own Self-Monitoring plan?",
+        "options": [
+          "Show me an example"
+        ]
+      },
+      {
+        "title": "Choose a manageable method",
+        "body": "Here are two ways someone could keep track of their physical activity:  Plan A: “I’ll try to remember how active I was.”  Plan B: “After each planned walk, I’ll write in my phone note whether I completed it.”  Which one is the clearer Self-Monitoring plan?",
+        "options": [
+          "Plan A",
+          "Plan B"
+        ],
+        "correct": "Plan B",
+        "hint": "Not quite — think about which plan clearly states what the person will keep track of and how they will record it, rather than relying on memory alone.  Which one is the clearer Self-Monitoring plan?",
+        "feedback": "Exactly — Plan B is the clearer Self-Monitoring plan because it specifies what the person will track, how they will record it, and when they will record it."
+      }
+    ],
+    "practice": [
+      {
+        "title": "Where are you now?",
+        "body": "Tracking can support preparing for activity as well as doing it.",
+        "question": "Which stage fits you right now?",
+        "field": "stage",
+        "options": [
+          "Thinking and preparing",
+          "Taking action"
+        ]
+      },
+      {
+        "title": "Choose what to notice",
+        "body": "Track something useful to you, without adding unnecessary burden.",
+        "question": "What will you track?",
+        "field": "what"
+      },
+      {
+        "title": "Choose a method",
+        "body": "A note, checklist, or short reflection may fit.",
+        "question": "How will you record it?",
+        "field": "how"
+      },
+      {
+        "title": "Choose when",
+        "body": "Connect recording to a moment that works for you.",
+        "question": "When will you record it?",
+        "field": "when"
+      },
+      {
+        "title": "Choose a review rhythm",
+        "body": "Reviewing can help you understand what is working.",
+        "question": "How often will you review what you recorded?",
+        "field": "frequency"
+      }
+    ]
+  }
+]

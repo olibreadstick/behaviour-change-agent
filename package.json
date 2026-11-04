@@ -4,9 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "node scripts/start-website.mjs",
+    "dev:admin": "vite",
+    "build": "node scripts/build-website.mjs",
+    "build:admin": "vite build --base /admin/ --outDir dist-admin",
+    "preview": "node scripts/serve-website.mjs",
+    "test:website": "node --test tests/website.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^1.40.0",

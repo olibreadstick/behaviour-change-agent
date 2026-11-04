@@ -4,7 +4,20 @@ export type UsageEventType =
   | "coach_interaction"
   | "resource_opened"
   | "workshop_started"
-  | "workshop_completed";
+  | "workshop_completed"
+  | "calendar_activity_added"
+  | "calendar_activity_edited"
+  | "calendar_activity_completed"
+  | "calendar_activity_missed"
+  | "calendar_activity_reopened"
+  | "goal_set"
+  | "goal_edited"
+  | "goal_completed"
+  | "goal_deleted"
+  | "goal_reopened"
+  | "buddy_profile_updated"
+  | "reflection_saved"
+  | "community_post_created";
 
 export interface UsageEvent {
   id: string;

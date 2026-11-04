@@ -65,6 +65,7 @@ let sentUsageIds = new Set<string>();
 let participantSyncBusy = false;
 let communityBusy = false;
 let adminBusy = false;
+let adminCloudReady = false;
 let lastParticipantRefresh = 0;
 let lastCommunityRefresh = 0;
 let lastAdminRefresh = 0;
@@ -811,6 +812,8 @@ const hydrateAdminCache = async (
       )
     );
 
+    adminCloudReady = true;
+
     const newIds = anonymousAccounts
       .map((account) => account.id)
       .sort();
@@ -844,6 +847,8 @@ const hydrateAdminCache = async (
     adminBusy = false;
   }
 };
+
+export const refreshAdminCloud = () => hydrateAdminCache(false);
 
 const handleParticipantSession = async (
   participantId: string
@@ -905,6 +910,7 @@ const tick = async () => {
 
   if (!session) {
     activeParticipantId = null;
+    adminCloudReady = false;
     return;
   }
 
@@ -912,21 +918,21 @@ const tick = async () => {
     session.role === "participant" &&
     session.userId
   ) {
-    await handleParticipantSession(
-      session.userId
-    );
+    // Participant persistence is now owned by the shared app store.
     return;
   }
 
   if (session.role === "admin") {
     activeParticipantId = null;
-    await syncCommunityLocal();
+    // Load the current server baseline before writing moderation changes.
+    // Otherwise a stale browser copy could overwrite newer community tips.
+    if (adminCloudReady) await syncCommunityLocal();
 
     const now = Date.now();
 
     if (now - lastAdminRefresh > 5000) {
       lastAdminRefresh = now;
-      await hydrateAdminCache(true);
+      await hydrateAdminCache(false);
     }
   }
 };

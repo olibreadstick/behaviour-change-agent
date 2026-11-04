@@ -50,6 +50,9 @@ const loadCommunityPosts = (): CommunityPost[] => {
 };
 
 const workshops = [
+  { id: 'goal_setting', label: 'Goal Setting guide' },
+  { id: 'action_planning_problem_solving', label: 'Action Planning & Problem Solving guide' },
+  { id: 'self_monitoring', label: 'Self-Monitoring guide' },
   {
     id: "workshop_1",
     label: "Workshop 1",
