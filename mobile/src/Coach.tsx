@@ -115,7 +115,7 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
   const historyList = (
     <View style={{ flex: 1 }}>
       <View style={{ marginBottom: 16 }}>
-        <Text style={s.eyebrow}>Compassion Hub</Text>
+        <Text style={s.eyebrow}>Your AI coach</Text>
         <Text style={s.heading}>Conversations</Text>
         <Text style={s.small}>Return to a previous chat or start a new one.</Text>
       </View>
@@ -180,8 +180,8 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
 
         <View style={{ flex: 1, minWidth: 0 }}>
           <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
-            <Text style={s.eyebrow}>Compassion Hub</Text>
-            <Text style={s.heading}>A little support from {state.profile.penguinName}</Text>
+            <Text style={s.eyebrow}>Your AI coach</Text>
+            <Text style={s.heading}>Talk with {state.profile.penguinName}</Text>
             <Text style={s.body}>Bring a question, a setback, or something you’re proud of. We can find your next step together.</Text>
 
             {!showDesktopHistory && (

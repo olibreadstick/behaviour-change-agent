@@ -3,7 +3,6 @@ import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, Text, Vie
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppStore } from './store';
-import { energyEarned } from './domain';
 import { color, styles as s } from './theme';
 import { Button, Card, Field } from './ui';
 export const penguinImage = require('../assets/coach-penguin.png');
@@ -13,7 +12,7 @@ export function PenguinHeader({ onCoach, onSettings, onClose }: { onCoach: () =>
   return <View style={s.header}>
     <Pressable onPress={onCoach} accessibilityRole="button" accessibilityLabel={`Talk to ${state.profile.penguinName}`} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 }}>
       <Image source={penguinImage} resizeMode="contain" style={{ width: 48, height: 48 }} />
-      <View style={{ flex: 1 }}><Text style={s.heading}>{state.profile.penguinName}</Text><Text style={s.small}>Your AI buddy · {energyEarned(state)} energy</Text></View>
+      <View style={{ flex: 1 }}><Text style={s.heading}>{state.profile.penguinName}</Text><Text style={s.small}>Your behaviour change companion</Text></View>
     </Pressable>
     {onSettings && <Pressable onPress={onSettings} accessibilityRole="button" accessibilityLabel="Penguin and profile settings" style={{ padding: 12 }}><Ionicons name="settings-outline" size={24} color={color.ink} /></Pressable>}
     {onClose && <Pressable onPress={onClose} accessibilityRole="button" accessibilityLabel="Close" style={{ padding: 12 }}><Ionicons name="close" size={25} color={color.ink} /></Pressable>}
@@ -38,7 +37,6 @@ export function PenguinSettings({ onboarding = false, onClose, onLogout }: { onb
         <Text style={s.small}>You can change these anytime. They personalize your coaching.</Text><Button onPress={() => save()}>{onboarding ? 'Meet my penguin' : 'Save preferences'}</Button>
         {onboarding && <Button secondary onPress={() => save(true)}>Start with Pip for now</Button>}
       </Card>
-      <Card><Text style={s.heading}>Effort gives your penguin energy</Text><Text style={s.body}>Short lessons and submitted guide exercises: +20 energy.{ '\n' }Completed activities: +15 energy.{ '\n' }Submitted reflections: +5 energy.</Text><Text style={s.small}>Energy celebrates participation. It stays with you when you take a break.</Text></Card>
       {onLogout && <Button secondary onPress={onLogout}>Sign out</Button>}
     </ScrollView></KeyboardAvoidingView></SafeAreaView>;
 }

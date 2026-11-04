@@ -24,7 +24,8 @@ import { guideResponse } from './guide-engine.cjs';
 import { AskCoach, GuideId, Tab } from './types';
 import { color, styles as s } from './theme';
 import { Button, Card, ErrorText, Field } from './ui';
-import { Today, Learn, MyPlan, Community } from './screens';
+import { Learn, Community } from './screens';
+import { MuseHome, MuseGoals, MuseFeed } from './MuseScreens';
 import { Guide } from './Guide';
 import { Coach } from './Coach';
 import { PenguinHeader, PenguinSettings } from './Penguin';
@@ -33,20 +34,14 @@ import {
   saveWebsiteSession,
 } from './website';
 
-const tabs: Tab[] = [
-  'Today',
-  'Learn',
-  'Calendar',
-  'Community',
-  'Compassion Hub',
-];
+const tabs: Tab[] = ['Today', 'Learn', 'Goals', 'Feed', 'Compassion Hub'];
 
 const icons = [
   'sunny-outline',
   'trail-sign-outline',
-  'calendar-outline',
-  'people-outline',
-  'heart-outline',
+  'flag-outline',
+  'sparkles-outline',
+  'chatbubble-ellipses-outline',
 ] as const;
 
 export const coachImage = require('../assets/coach-penguin.png');
@@ -454,6 +449,8 @@ function Shell({
         </View>
       )}
 
+      {tab === 'Community' && <Pressable accessibilityRole="button" onPress={() => go('Today')} style={{ paddingHorizontal: 22, paddingVertical: 8 }}><Text style={[s.small, { color: color.blue }]}>‹ Back to home</Text></Pressable>}
+
       {tab === 'Compassion Hub' ? (
         <Coach
           participantId={participantId}
@@ -471,15 +468,7 @@ function Shell({
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={s.content}
         >
-          {tab === 'Today' && (
-            <Today
-              onGuide={startGuide}
-              onCoach={askCoach}
-              onResume={() =>
-                setGuideOpen(true)
-              }
-            />
-          )}
+          {tab === 'Today' && <MuseHome onGuide={startGuide} onCoach={askCoach} onGoals={() => go('Goals')} onLearn={() => go('Learn')} onCommunity={() => go('Community')} onFeed={() => go('Feed')} />}
 
           {tab === 'Learn' && (
             <Learn
@@ -490,12 +479,8 @@ function Shell({
             />
           )}
 
-          {tab === 'Calendar' && (
-            <MyPlan
-              onGuide={startGuide}
-              onCoach={askCoach}
-            />
-          )}
+          {tab === 'Goals' && <MuseGoals onGuide={startGuide} onCoach={askCoach} />}
+          {tab === 'Feed' && <MuseFeed onGuide={startGuide} onCoach={askCoach} onLearn={() => go('Learn')} />}
         </ScrollView>
       )}
 

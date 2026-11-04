@@ -1,5 +1,5 @@
 export type GuideId = 'goal_setting' | 'action_planning_problem_solving' | 'self_monitoring';
-export type Tab = 'Today' | 'Learn' | 'Calendar' | 'Community' | 'Compassion Hub';
+export type Tab = 'Today' | 'Learn' | 'Goals' | 'Feed' | 'Community' | 'Compassion Hub';
 export interface BuddyProfile { displayName: string; pronouns: string; penguinName: string; onboarded: boolean }
 export type HomeworkKind = 'guide_learning' | 'guide_practice' | 'activity' | 'reflection';
 export interface HomeworkAward { id: string; kind: HomeworkKind; label: string; energy: number; createdAt: string }
