@@ -4,7 +4,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useAppStore } from './store';
 import { AskCoach, Goal, GuideId } from './types';
 import { color, styles as s } from './theme';
-import { Button } from './ui';
+import { Button, Field } from './ui';
 
 const penguin = require('../assets/coach-penguin.png');
 type OpenGuide = (id: GuideId, mode: 'learn' | 'use') => void;
@@ -19,7 +19,9 @@ function MenuAction({ icon, title, detail, onPress }: { icon: keyof typeof Ionic
 }
 
 function GoalRow({ goal, expanded, onToggle, onCoach, onGuide }: { goal: Goal; expanded: boolean; onToggle: () => void; onCoach: AskCoach; onGuide: OpenGuide }) {
-  const { state } = useAppStore();
+  const { state, update, track } = useAppStore();
+  const [editing, setEditing] = useState(false);
+  const [goalText, setGoalText] = useState(goal.goal);
   const plans = state.plans.filter(p => p.goalId === goal.id);
   const activities = state.activities.filter(a => a.goalId === goal.id).sort((a,b) => b.date.localeCompare(a.date));
   return <View style={{ borderBottomWidth: 1, borderBottomColor: color.line }}>
@@ -35,8 +37,22 @@ function GoalRow({ goal, expanded, onToggle, onCoach, onGuide }: { goal: Goal; e
       {plans.length ? plans.map(p => <View key={p.id} style={{ gap: 4 }}><Text style={s.body}>{p.what}</Text><Text style={s.small}>When: {p.when || 'Not specified'} · Where: {p.where || 'Not specified'}</Text>{!!p.barrier && <Text style={s.small}>Possible barrier: {p.barrier}</Text>}{!!p.alternative && <Text style={s.small}>Backup: {p.alternative}</Text>}</View>) : <Text style={s.small}>No action plan saved for this goal yet.</Text>}
       <Text style={s.heading}>Timeline</Text>
       <Text style={s.small}>• {new Date(goal.createdAt).toLocaleDateString()} — Goal created</Text>
+      {(goal.revisions || []).map((r, i) => <Text key={`${goal.id}-revision-${i}`} style={s.small}>• {new Date(r.changedAt).toLocaleDateString()} — Updated from “{r.previous}” to “{r.next}”</Text>)}
       {activities.map(a => <Text key={a.id} style={s.small}>• {a.date} — {a.title} ({a.status})</Text>)}
       {goal.completedAt && <Text style={s.small}>• {new Date(goal.completedAt).toLocaleDateString()} — Goal completed</Text>}
+      {editing && <View style={{ gap: 8 }}>
+        <Field label="Update your goal" value={goalText} onChangeText={setGoalText} maxLength={500} multiline />
+        <Button disabled={!goalText.trim()} onPress={() => {
+          const next = goalText.trim();
+          if (next !== goal.goal) {
+            update(st => ({ ...st, goals: st.goals.map(g => g.id === goal.id ? { ...g, goal: next, revisions: [...(g.revisions || []), { previous: g.goal, next, changedAt: new Date().toISOString(), source: 'manual' as const }] } : g) }));
+            track('goal_updated', { source: 'goals_screen' });
+          }
+          setEditing(false);
+        }}>Save changes</Button>
+        <Button secondary onPress={() => { setGoalText(goal.goal); setEditing(false); }}>Cancel</Button>
+      </View>}
+      {!editing && <Button secondary onPress={() => { setGoalText(goal.goal); setEditing(true); }}>Edit this goal</Button>}
       <Button secondary onPress={() => onCoach({ kind: 'goal_support', goalId: goal.id, subject: goal.goal, prompt: `I'd like to talk about my goal: ${goal.goal}` })}>Discuss this goal</Button>
       {!plans.length && <Button secondary onPress={() => onGuide('action_planning_problem_solving', 'use')}>Create an action plan</Button>}
     </View>}
@@ -79,6 +95,6 @@ export function MuseFeed({ onGuide, onCoach, onLearn }: { onGuide: OpenGuide; on
   return <View style={{ gap: 16 }}><Text style={s.eyebrow}>Discover</Text><Text style={s.title}>Your Feed</Text><Text style={s.body}>Suggestions based on your saved goals and learning progress.</Text>
     <View style={{ backgroundColor: color.white, padding: 20, borderRadius: 22, gap: 12, borderWidth:1, borderColor:color.line }}><Text style={s.eyebrow}>Recommended next step</Text><Text style={s.heading}>{!activeGoal ? 'Start with a meaningful goal' : !hasPlan ? 'Make a plan for your goal' : 'Notice your progress'}</Text><Text style={s.body}>{!activeGoal ? 'A small, realistic goal can help you get started.' : !hasPlan ? `Your goal is “${activeGoal.goal}.” An action plan can help you decide when, where, and how.` : 'Your plan is ready. Check in about what is working and what you might adjust.'}</Text><Button onPress={() => !activeGoal ? onGuide('goal_setting','use') : !hasPlan ? onGuide('action_planning_problem_solving','use') : onCoach({ kind:'goal_review', goalId:activeGoal.id, subject:activeGoal.goal, prompt:`Help me review progress on ${activeGoal.goal}` })}>Explore suggestion</Button></View>
     <View style={{ backgroundColor: color.white, padding: 20, borderRadius: 22, gap: 12, borderWidth:1, borderColor:color.line }}><Text style={s.heading}>Explore the guides</Text><Text style={s.body}>Goal setting, action planning, and self-monitoring are available in your learning path.</Text><Button secondary onPress={onLearn}>Browse learning path</Button></View>
-    <Text style={s.small}>Your Feed currently uses saved goals and guide progress. AI-generated recommendations across conversations are planned for a later phase.</Text>
+    <Text style={s.small}>Suggestions are based on your saved goals and plans. Your coach also receives this context during conversations.</Text>
   </View>;
 }

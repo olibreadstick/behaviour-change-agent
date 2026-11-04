@@ -11,10 +11,10 @@ import {
   View,
 } from 'react-native';
 import { useAppStore, uuid } from './store';
-import { coachContext, confirmedGoal, newConversation } from './domain';
+import { coachContext, confirmedGoal, monday, newConversation } from './domain';
 import { sendCoach } from './api';
 import { GUIDE_DEFINITIONS } from './guide-engine.cjs';
-import { GuideId } from './types';
+import { GoalSuggestion, GuideId } from './types';
 import { color, styles as s } from './theme';
 import { Button, Card, ErrorText, Field } from './ui';
 import { ReflectionPanel } from './screens';
@@ -30,6 +30,9 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
   const [resource, setResource] = useState<GuideId | null>(null);
   const [showReflections, setShowReflections] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [proposal, setProposal] = useState<GoalSuggestion | null>(null);
+  const [draftGoal, setDraftGoal] = useState('');
+  const [targetGoalId, setTargetGoalId] = useState('');
 
   const active = state.conversations.find(c => c.id === state.activeConversationId)!;
   const goal = confirmedGoal(state);
@@ -75,6 +78,9 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
         } : c),
       }));
       setResource(result.workshop_resource && GUIDE_DEFINITIONS.some(g => g.id === result.workshop_resource) ? result.workshop_resource as GuideId : null);
+      if (result.goal_suggestion && (result.goal_suggestion.operation === 'create' || result.goal_suggestion.operation === 'update') && typeof result.goal_suggestion.goal === 'string' && result.goal_suggestion.goal.trim()) {
+        openProposal(result.goal_suggestion);
+      }
       setInput('');
       track('coach_interaction', { conversationId });
     } catch (e) {
@@ -91,6 +97,36 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     }
   }
 
+  // Proposed changes are only committed after an explicit participant confirmation.
+  // This also supports older n8n workflows that return only chat_response.
+  function openProposal(next: GoalSuggestion) {
+    setProposal(next);
+    setDraftGoal(next.goal.slice(0, 500));
+    setTargetGoalId(next.goal_id && state.goals.some(g => g.id === next.goal_id) ? next.goal_id : '');
+  }
+
+  function confirmProposal() {
+    const text = draftGoal.trim();
+    if (!proposal || !text || text.length > 500) return;
+    if (proposal.operation === 'update' && !state.goals.some(g => g.id === targetGoalId)) {
+      setError('Please select the goal you want to update.');
+      return;
+    }
+    const now = new Date().toISOString();
+    const id = uuid();
+    update(st => {
+      if (proposal.operation === 'create') {
+        return { ...st, goals: [{ id, goal: text, weekStart: monday(), completed: false, confirmed: true, createdAt: now, revisions: [] }, ...st.goals] };
+      }
+      return { ...st, goals: st.goals.map(g => g.id === targetGoalId ? {
+        ...g, goal: text, revisions: [...(g.revisions || []), { previous: g.goal, next: text, changedAt: now, source: 'coach' as const }],
+      } : g) };
+    });
+    track(proposal.operation === 'create' ? 'goal_created_from_chat' : 'goal_updated_from_chat', { source: 'confirmed_coach_proposal' });
+    setProposal(null);
+    setError('');
+  }
+
   function newChat() {
     if (busy) return;
     const c = newConversation(uuid());
@@ -99,6 +135,7 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     setError('');
     setInput('');
     setHistoryOpen(false);
+    setProposal(null);
   }
 
   function openChat(id: string) {
@@ -108,6 +145,7 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     setError('');
     setInput('');
     setHistoryOpen(false);
+    setProposal(null);
   }
 
   const conversations = [...state.conversations].reverse();
@@ -155,6 +193,23 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
 
   return (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <Modal visible={!!proposal} transparent animationType="fade" onRequestClose={() => setProposal(null)}>
+        <View style={{ flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.35)' }}>
+          <View style={{ backgroundColor: color.white, padding: 22, borderRadius: 20, gap: 12, maxWidth: 520, width: '100%', alignSelf: 'center' }}>
+            <Text style={s.heading}>{proposal?.operation === 'update' ? 'Review goal update' : 'Review new goal'}</Text>
+            <Text style={s.small}>Edit the wording before saving. Nothing changes unless you confirm.</Text>
+            <Field label="Goal" value={draftGoal} onChangeText={setDraftGoal} maxLength={500} multiline />
+            {proposal?.operation === 'update' && <View style={{ gap: 8 }}>
+              <Text style={s.label}>Select the goal to update</Text>
+              {state.goals.map(g => <Pressable key={g.id} accessibilityRole="button" onPress={() => setTargetGoalId(g.id)} style={{ padding: 12, borderRadius: 10, borderWidth: 1, borderColor: targetGoalId === g.id ? color.blue : color.line }}>
+                <Text style={s.body}>{targetGoalId === g.id ? '✓ ' : ''}{g.goal}</Text>
+              </Pressable>)}
+            </View>}
+            <Button disabled={!draftGoal.trim() || (proposal?.operation === 'update' && !targetGoalId)} onPress={confirmProposal}>{proposal?.operation === 'update' ? 'Confirm update' : 'Save goal'}</Button>
+            <Button secondary onPress={() => setProposal(null)}>Cancel</Button>
+          </View>
+        </View>
+      </Modal>
       {!showDesktopHistory && (
         <Modal visible={historyOpen} transparent animationType="fade" onRequestClose={() => setHistoryOpen(false)}>
           <View style={{ flex: 1, flexDirection: 'row' }}>
@@ -220,6 +275,7 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
             {active.messages.map(m => <View key={m.id} style={[s.message, m.role === 'user' && s.userMessage]}>
               <Text style={s.small}>{m.role === 'user' ? 'You' : state.profile.penguinName}</Text>
               <Text selectable style={s.body}>{m.text}</Text>
+              {m.role === 'user' && !m.failed && <Button secondary disabled={busy} onPress={() => openProposal({ operation: 'create', goal: m.text })}>Save this as a goal</Button>}
               {m.failed && <Button secondary disabled={busy} onPress={() => void send(m.text, m.id)}>Retry this message</Button>}
             </View>)}
 

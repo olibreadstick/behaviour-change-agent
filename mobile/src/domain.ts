@@ -38,7 +38,8 @@ export function emptyState(id: string): AppState {
 }
 export function confirmedGoal(state: AppState): Goal | null { return state.goals.find(g => g.confirmed && !g.completed) || null; }
 export function coachContext(state: AppState, participantId: string, screen: Tab): CoachContext {
-  const conversation = state.conversations.find(c => c.id === state.activeConversationId);
+  // Include relevant recent messages across conversations, not only the currently open chat.
+  const recentMessages = state.conversations.flatMap(c => c.messages.filter(m => !m.failed)).sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-20);
   const selected = <T extends { id: string }>(items: T[], id: string | undefined, limit: number) => id && items.some(x => x.id === id) ? [...items.filter(x => x.id === id), ...items.filter(x => x.id !== id)].slice(0, limit) : items.slice(0, limit);
   return { participant_id: participantId, source_screen: screen, participant_preferences: state.profile,
     penguin: { name: state.profile.penguinName, energy_earned: energyEarned(state), homework_completed: state.homeworkAwards.length },
@@ -46,7 +47,7 @@ export function coachContext(state: AppState, participantId: string, screen: Tab
     goals: selected(state.goals, state.coachRequest?.goalId, 10), action_plans: selected(state.plans, state.coachRequest?.planId, 10), activities: selected(state.activities.slice().reverse(), state.coachRequest?.activityId, 30),
     monitoring_plan: state.monitoring || null, recent_reflections: state.reflections.slice(-5),
     completed_lessons: state.completedLessons, guide_progress: state.guide || null,
-    conversation_history: (conversation?.messages || []).filter(m => !m.failed).slice(-12).map(({ role, text }) => ({ role, text })) };
+    conversation_history: recentMessages.map(({ role, text }) => ({ role, text })) };
 }
 export function saveGuideDraft(state: AppState, guide: GuideView, id: string): AppState {
   if (guide.mode !== 'use' || !guide.completed) throw new Error('Complete the guide before saving.');
