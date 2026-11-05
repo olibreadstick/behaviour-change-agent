@@ -34,7 +34,18 @@ function GoalDetails({ goal, onBack, onCoach }: { goal: Goal; onBack: () => void
     ...(goal.revisions || []).map((revision, i) => ({ id: `goal-revision-${i}`, date: revision.changedAt, title: 'Updated goal', description: `Changed from “${revision.previous}” to “${revision.next}”.` })),
     ...plans.flatMap(plan => [
       { id: `plan-${plan.id}`, date: plan.createdAt, title: 'Created action plan', description: [plan.what, plan.when && `When: ${plan.when}`, plan.where && `Where: ${plan.where}`, plan.how && `How: ${plan.how}`, plan.barrier && `Possible barrier: ${plan.barrier}`, plan.alternative && `Backup: ${plan.alternative}`, plan.cue && `Reminder: ${plan.cue}`].filter(Boolean).join(' · ') },
-      ...(plan.revisions || []).map((revision, i) => ({ id: `plan-revision-${plan.id}-${i}`, date: revision.changedAt, title: 'Updated action plan', description: `Changed from “${revision.previous}” to “${revision.next}”.` })),
+      ...(plan.revisions || []).map((revision, i) => {
+        let description = `Action plan revised.`;
+        try {
+          const before = JSON.parse(revision.previous);
+          const after = JSON.parse(revision.next);
+          if (before.when !== after.when) description = `Schedule: ${before.when || 'Unspecified'} → ${after.when || 'Unspecified'}.`;
+          if (before.what !== after.what) description += ` Activity: ${after.what}.`;
+        } catch {
+          description = `Changed from “${revision.previous}” to “${revision.next}”.`;
+        }
+        return { id: `plan-revision-${plan.id}-${i}`, date: revision.changedAt, title: 'Action plan adjusted with goal', description };
+      }),
     ]),
     ...state.activities.filter(a => a.goalId === goal.id).map(activity => ({ id: `activity-${activity.id}`, date: activity.date, title: activity.title, description: activity.status === 'completed' ? 'Activity completed' : 'Activity planned' })),
     ...(goal.completedAt ? [{ id: `completed-${goal.id}`, date: goal.completedAt, title: 'Completed goal', description: 'Marked this goal as completed.' }] : []),

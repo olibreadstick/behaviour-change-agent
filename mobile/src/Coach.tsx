@@ -13,15 +13,43 @@ import {
   View,
 } from 'react-native';
 import { useAppStore, uuid } from './store';
-import { coachContext, confirmedGoal, monday, newConversation } from './domain';
-import { sendCoach } from './api';
-import { GUIDE_DEFINITIONS } from './guide-engine.cjs';
-import { GoalSuggestion, PlanSuggestion, GuideId } from './types';
+import { coachContext, confirmedGoal, monday, newConversation, saveGuideDraft } from './domain';
+import { sendCoach, request, COACH_URL } from './api';
+import { GUIDE_DEFINITIONS, guideResponse } from './guide-engine.cjs';
+import { GoalSuggestion, PlanSuggestion, GuideId, GuideView } from './types';
 import { color, styles as s } from './theme';
 import { Button, Card, ErrorText, Field } from './ui';
 import { ReflectionPanel } from './screens';
 
 const penguinImage = require('../assets/coach-penguin.png');
+
+// Day suggestions must match the frequency in the participant's confirmed goal.
+// Only suggest a schedule when the frequency is explicit; otherwise ask for their own days.
+function goalDaysPerWeek(goalText: string): number | null {
+  const text = goalText.toLowerCase();
+  const wordNumbers: Record<string, number> = { once: 1, twice: 2, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
+  const number = '(once|twice|one|two|three|four|five|six|seven|[1-7])';
+  const patterns = [
+    new RegExp(String.raw`\b${number}\s*(?:times?|days?|sessions?|walks?)\s*(?:a|per|each|every)?\s*week\b`, 'i'),
+    new RegExp(String.raw`\b${number}\s*(?:times?|days?|sessions?|walks?)\s*(?:a|per|each|every)\s*week\b`, 'i'),
+    new RegExp(String.raw`\b${number}\s*(?:weekly|per week)\b`, 'i'),
+  ];
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match) return wordNumbers[match[1]] || Number(match[1]) || null;
+  }
+  return null;
+}
+
+const DAY_PATTERNS: Record<number, string[]> = {
+  1: ['Monday', 'Saturday'],
+  2: ['Tuesday, Saturday', 'Monday, Thursday'],
+  3: ['Monday, Wednesday, Friday', 'Tuesday, Thursday, Saturday'],
+  4: ['Monday, Tuesday, Thursday, Saturday', 'Monday, Wednesday, Friday, Sunday'],
+  5: ['Monday, Tuesday, Wednesday, Thursday, Friday', 'Monday, Tuesday, Thursday, Saturday, Sunday'],
+  6: ['Monday, Tuesday, Wednesday, Thursday, Friday, Saturday', 'Monday, Tuesday, Wednesday, Friday, Saturday, Sunday'],
+  7: ['Every day'],
+};
 
 // A familiar chat typing indicator. Visual feedback only: it never creates a message.
 function PenguinTypingBubble({ name }: { name: string }) {
@@ -48,6 +76,18 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
   const showDesktopHistory = Platform.OS === 'web' && width >= 820;
 
   const [input, setInput] = useState('');
+  const [messageReactions, setMessageReactions] = useState<Record<string, string>>({});
+  const [guideAiChoices, setGuideAiChoices] = useState<string[]>([]);
+  const [guideChoicesBusy, setGuideChoicesBusy] = useState(false);
+  const guideOptionsRequest = React.useRef(0);
+  const [enterOwnDays, setEnterOwnDays] = useState(false);
+  const [chatGuide, setChatGuide] = useState<GuideView | null>(null);
+  const [chatGuideGoalId, setChatGuideGoalId] = useState('');
+  const [chatGuideTime, setChatGuideTime] = useState('');
+  const [chatGuideChoosingDays, setChatGuideChoosingDays] = useState(false);
+  const [chatGuideChoosingDuration, setChatGuideChoosingDuration] = useState(false);
+  const [chatGuideHow, setChatGuideHow] = useState('');
+  const [chatGuideDuration, setChatGuideDuration] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [resource, setResource] = useState<GuideId | null>(null);
@@ -69,15 +109,189 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     if (state.coachRequest) setInput(state.coachRequest.prompt);
   }, [state.coachRequest?.id]);
 
-  async function send(text: string, retryId?: string) {
+  // Run the existing Action Planning & Problem Solving GUIDE inside the chat.
+  // This is intentionally not an LLM-only approximation of the guide.
+  function appendGuideMessage(role: 'user' | 'assistant', text: string) {
+    update(st => ({ ...st, conversations: st.conversations.map(c => c.id === st.activeConversationId ? {
+      ...c, messages: [...c.messages, { id: uuid(), role, text, createdAt: new Date().toISOString() }],
+      quickReplies: [],
+    } : c) }));
+  }
+
+  // Use the current n8n webhook to generate contextual choices for each fixed guide step.
+  // The guide remains the authority for progression and saving; AI choices are only suggestions.
+  async function fetchGuideOptions(goalId: string, stage: string, draft: Record<string, string> = {}) {
+    const selected = state.goals.find(g => g.id === goalId && g.confirmed);
+    if (!selected || !COACH_URL) return;
+    const requestNumber = ++guideOptionsRequest.current;
+    setGuideAiChoices([]);
+    setGuideChoicesBusy(true);
+    try {
+      const response = await request<{ quick_reply_options?: string[] }>(COACH_URL, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'guideSuggestions', sessionId: `guide_suggestions_${participantId}`,
+          chatInput: 'Generate contextual guide choices',
+          app_context: coachContext(state, participantId, 'Compassion Hub'),
+          guide_suggestion: { goal: selected.goal, stage, draft },
+        }),
+      });
+      const options = Array.isArray(response.quick_reply_options) ? response.quick_reply_options : [];
+      if (requestNumber === guideOptionsRequest.current) setGuideAiChoices(options.filter(x => typeof x === 'string' && x.trim().length > 0).slice(0, 3));
+    } catch {
+      // Never block the participant from typing their own answer if the AI is unavailable.
+      if (requestNumber === guideOptionsRequest.current) setGuideAiChoices([]);
+    } finally { if (requestNumber === guideOptionsRequest.current) setGuideChoicesBusy(false); }
+  }
+
+  function startChatGuide(targetId?: string) {
+    const chosen = state.goals.find(g => g.id === targetId && g.confirmed) || confirmedGoal(state);
+    if (!chosen) {
+      setError('Save a goal first, then we can make an action plan together.');
+      return;
+    }
+    try {
+      // The confirmed goal already answers WHAT. Begin with WHEN, not a repeated
+      // question asking the participant to describe the same activity again.
+      const result = guideResponse({
+        guide_id: 'action_planning_problem_solving', mode: 'use', kind: 'open',
+        step: 1, draft: { what: chosen.goal },
+      }, { confirmed_goal: chosen });
+      if (!result.guide) throw new Error('Unable to open the action-planning guide.');
+      setChatGuide({ ...result.guide, attemptId: uuid() });
+      setGuideAiChoices([]);
+      setChatGuideGoalId(chosen.id);
+      setChatGuideTime('');
+      setChatGuideChoosingDays(false);
+      setChatGuideChoosingDuration(false);
+      setChatGuideHow('');
+      setChatGuideDuration('');
+      setActionPlanInvite(null);
+      setResource(null);
+      appendGuideMessage('assistant', 'For your goal, what time of day would work best?');
+      void fetchGuideOptions(chosen.id, 'time_of_day', { what: chosen.goal });
+      track('guide_started_in_chat', { guide: 'action_planning_problem_solving' });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to open the guide.');
+    }
+  }
+
+  function answerChatGuide(answer: string) {
+    if (!chatGuide || !answer.trim()) return;
+    const value = answer.trim();
+    if (chatGuide.completed) return;
+    // The guide's WHEN field needs both a preferred time and chosen days.
+    // Keep asking within the chat until both are resolved; never skip the rest of the guide.
+    if (chatGuide.step === 1 && !chatGuideChoosingDays) {
+      setChatGuideTime(value);
+      setChatGuideChoosingDays(true);
+      appendGuideMessage('user', value);
+      appendGuideMessage('assistant', 'Which days would work best?');
+      void fetchGuideOptions(chatGuideGoalId, 'days_of_week', { ...chatGuide.draft, time_of_day: value });
+      setInput('');
+      return;
+    }
+    if (chatGuide.step === 1 && chatGuideChoosingDays && /^Choose my own days$/i.test(value)) {
+      setEnterOwnDays(true);
+      setInput('');
+      return;
+    }
+    // The guide's HOW field is split into two short chat questions: method,
+    // then session duration. Both are saved together in the existing plan schema.
+    if (chatGuide.step === 3 && !chatGuideChoosingDuration) {
+      setChatGuideHow(value);
+      setChatGuideChoosingDuration(true);
+      appendGuideMessage('user', value);
+      appendGuideMessage('assistant', 'How long would you like each session to last?');
+      void fetchGuideOptions(chatGuideGoalId, 'duration', { ...chatGuide.draft, how: value });
+      setInput('');
+      return;
+    }
+    const durationAnswer = chatGuide.step === 3 && chatGuideChoosingDuration;
+    if (durationAnswer) setChatGuideDuration(value);
+    try {
+      const chosen = state.goals.find(g => g.id === chatGuideGoalId && g.confirmed);
+      if (!chosen) throw new Error('This goal is no longer available.');
+      const fullAnswer = chatGuide.step === 1 && chatGuideChoosingDays ? `${value}, ${chatGuideTime.toLowerCase()}` : durationAnswer ? `${chatGuideHow} (Duration: ${value})` : value;
+      const result = guideResponse({ guide_id: chatGuide.guide_id, mode: chatGuide.mode, kind: 'answer',
+        step: chatGuide.step, draft: chatGuide.draft, answer: fullAnswer }, { confirmed_goal: chosen });
+      if (!result.guide) throw new Error('Unable to continue the guide.');
+      appendGuideMessage('user', value);
+      setChatGuide({ ...result.guide, attemptId: chatGuide.attemptId });
+      setGuideAiChoices([]);
+      setChatGuideChoosingDays(false);
+      setChatGuideChoosingDuration(false);
+      setChatGuideTime('');
+      setEnterOwnDays(false);
+      setInput('');
+      if (result.guide.completed) {
+        appendGuideMessage('assistant', 'Your action plan is ready. Check the summary below, then choose whether to save it.');
+      } else {
+        const prompts: Record<number, string> = {
+          2: 'Where would you like to do this?',
+          3: 'How would you like to get started?',
+          4: 'What might make this plan difficult?',
+          5: 'What could you do if that happens?',
+          6: 'What could remind you to follow your plan?',
+        };
+        appendGuideMessage('assistant', prompts[result.guide.step] || result.guide.question);
+        const stageNames: Record<number, string> = {2:'location',3:'how',4:'barrier',5:'alternative',6:'reminder'};
+        void fetchGuideOptions(chatGuideGoalId, stageNames[result.guide.step] || 'next', result.guide.draft);
+      }
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to continue the guide.'); }
+  }
+
+  function saveChatGuide() {
+    if (!chatGuide?.completed || !chatGuideGoalId) return;
+    try {
+      update(st => {
+        const selected = st.goals.find(g => g.id === chatGuideGoalId && g.confirmed);
+        if (!selected) throw new Error('The selected goal was not found.');
+        // The existing guide saver uses confirmedGoal (first item), so prioritize
+        // our explicitly chosen goal only for the save operation.
+        const ordered = { ...st, goals: [selected, ...st.goals.filter(g => g.id !== selected.id)] };
+        const saved = saveGuideDraft(ordered, chatGuide, uuid());
+        return { ...saved, goals: st.goals };
+      });
+      track('guide_plan_saved', { guide: 'action_planning_problem_solving', source: 'chat' });
+      appendGuideMessage('assistant', 'Your action plan is saved under your goal. You can see it in Goals and adjust it with me whenever you need.');
+      setChatGuide(null);
+      setChatGuideGoalId('');
+    } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save your plan.'); }
+  }
+
+  // Suggestions come from n8n, not a fixed list. The participant can always type an alternative.
+  const guideChoices = chatGuide && !chatGuide.completed ? [
+    ...guideAiChoices,
+    ...(chatGuide.step === 1 && chatGuideChoosingDays ? ['Choose my own days'] : []),
+    ...(chatGuide.step === 3 && chatGuideChoosingDuration ? ['Choose my own duration'] : []),
+  ] : [];
+
+  async function send(text: string, retryId?: string, planHelp?: { goalId: string; goal: string }) {
     if (!text.trim() || busy || preview) return;
+    if (chatGuide) { answerChatGuide(text); return; }
+    if (planHelp) { appendGuideMessage('user', text); startChatGuide(planHelp.goalId); return; }
     setBusy(true);
     setError('');
+    setEnterOwnDays(false);
 
     const conversationId = active.id;
     const messageId = retryId || uuid();
     const requestId = state.coachRequest?.id;
     const context = coachContext(state, participantId, state.coachRequest?.source || 'Compassion Hub');
+    // The selected goal is sent as structured context, NOT exposed in the chat bubble.
+    if (planHelp) {
+      context.requested_help = {
+        id: uuid(), source: 'Compassion Hub', kind: 'plan_support',
+        prompt: 'Help me make an action plan for this confirmed goal, beginning with one simple choice.',
+        subject: planHelp.goal, goalId: planHelp.goalId,
+      };
+      const chosen = state.goals.find(g => g.id === planHelp.goalId && g.confirmed);
+      if (chosen) {
+        context.goals = [chosen, ...context.goals.filter(g => g.id !== chosen.id)].slice(0, 10);
+        context.confirmed_goal = chosen;
+      }
+    }
 
     if (!retryId) {
       update(st => ({
@@ -112,6 +326,10 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
       if (result.plan_suggestion && ['create', 'update'].includes(result.plan_suggestion.operation) && typeof result.plan_suggestion.what === 'string' && result.plan_suggestion.what.trim()) {
         openPlanProposal(result.plan_suggestion);
       }
+      const reaction = (result as typeof result & { reaction_emoji?: string }).reaction_emoji;
+      if (typeof reaction === 'string' && ['💛', '🫶', '💙', '🌱'].includes(reaction)) {
+        setMessageReactions(prev => ({ ...prev, [messageId]: reaction }));
+      }
       setInput('');
       track('coach_interaction', { conversationId });
     } catch (e) {
@@ -136,6 +354,34 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     setTargetGoalId(next.goal_id && state.goals.some(g => g.id === next.goal_id && g.confirmed) ? next.goal_id : '');
   }
 
+  // Align a linked action plan with an explicitly confirmed weekly-frequency change.
+  // Preserve existing preferences, duration and barrier strategies. For a reduction,
+  // keep the first N chosen days rather than inventing different days.
+  function syncPlanFrequency(when: string, previousGoal: string, nextGoal: string): string | null {
+    const frequency = (goal: string): number | null => {
+      const match = goal.match(/\b(\d+|one|two|three|four|five|six|seven)\s*(?:times?|days?|sessions?|walks?)\s*(?:a|per|each)\s*week\b/i);
+      const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
+      if (!match) return null;
+      const value = words[match[1].toLowerCase()] ?? Number(match[1]);
+      return Number.isInteger(value) && value >= 1 && value <= 7 ? value : null;
+    };
+    const before = frequency(previousGoal);
+    const after = frequency(nextGoal);
+    if (!before || !after || before === after) return null;
+    const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const found = [...when.matchAll(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/gi)].map(m => weekdays.find(d => d.toLowerCase() === m[1].toLowerCase())!);
+    const distinct = [...new Set(found)];
+    if (after < before && distinct.length >= after) {
+      const kept = distinct.slice(0, after);
+      // Keep the original time-of-day and other free-text context after the day list.
+      const remainder = when.replace(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/gi, '').replace(/[,\s]+/g, ' ').replace(/^(?:and\s*)+/i, '').trim();
+      return `${kept.join(', ')}${remainder ? `, ${remainder}` : ''}`;
+    }
+    // If the saved days cannot safely be reduced, or the frequency increases,
+    // retain the participant's day preferences and record the frequency explicitly.
+    return `${after} ${after === 1 ? 'session' : 'sessions'} per week${when ? `; preferred schedule: ${when}` : ''}`;
+  }
+
   function confirmProposal() {
     const text = draftGoal.trim();
     if (!proposal || !text || text.length > 500) return;
@@ -149,9 +395,30 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
       if (proposal.operation === 'create') {
         return { ...st, goals: [{ id, goal: text, weekStart: monday(), completed: false, confirmed: true, createdAt: now, revisions: [] }, ...st.goals] };
       }
-      return { ...st, goals: st.goals.map(g => g.id === targetGoalId ? {
-        ...g, goal: text, revisions: [...(g.revisions || []), { previous: g.goal, next: text, changedAt: now, source: 'coach' as const }],
-      } : g) };
+      const previousGoal = st.goals.find(g => g.id === targetGoalId);
+      if (!previousGoal) return st;
+      return {
+        ...st,
+        goals: st.goals.map(g => g.id === targetGoalId ? {
+          ...g, goal: text, revisions: [...(g.revisions || []), { previous: g.goal, next: text, changedAt: now, source: 'coach' as const }],
+        } : g),
+        plans: st.plans.map(plan => {
+          if (plan.goalId !== targetGoalId) return plan;
+          const revisedWhen = syncPlanFrequency(plan.when, previousGoal.goal, text);
+          if (!revisedWhen || revisedWhen === plan.when) return plan;
+          const revisedWhat = plan.what === previousGoal.goal ? text : plan.what;
+          return {
+            ...plan,
+            what: revisedWhat,
+            when: revisedWhen,
+            revisions: [...(plan.revisions || []), {
+              previous: JSON.stringify({ what: plan.what, when: plan.when, where: plan.where, how: plan.how, barrier: plan.barrier, alternative: plan.alternative, cue: plan.cue }),
+              next: JSON.stringify({ what: revisedWhat, when: revisedWhen, where: plan.where, how: plan.how, barrier: plan.barrier, alternative: plan.alternative, cue: plan.cue }),
+              changedAt: new Date(Date.parse(now) + 1).toISOString(), source: 'coach' as const,
+            }],
+          };
+        }),
+      };
     });
     track(proposal.operation === 'create' ? 'goal_created_from_chat' : 'goal_updated_from_chat', { source: 'confirmed_coach_proposal' });
     const savedOperation = proposal.operation;
@@ -159,7 +426,7 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     setError('');
     // Offer a natural next step without initiating another AI request or saving a plan.
     if (savedOperation === 'create') setActionPlanInvite({ goalId: id, goal: text });
-    update(st => ({ ...st, conversations: st.conversations.map(c => c.id === active.id ? { ...c, messages: [...c.messages, { id: uuid(), role: 'assistant' as const, text: savedOperation === 'create' ? 'Your goal is saved in Goals! Would you like to make a flexible action plan for it? I can suggest some starting ideas based on your goal.' : 'I updated your goal in Goals and added this change to its timeline.', createdAt: new Date().toISOString() }] } : c) }));
+    update(st => ({ ...st, conversations: st.conversations.map(c => c.id === active.id ? { ...c, quickReplies: [], messages: [...c.messages, { id: uuid(), role: 'assistant' as const, text: savedOperation === 'create' ? 'Your goal is saved in Goals! Would you like to make a flexible action plan for it? I can suggest some starting ideas based on your goal.' : 'Your goal and its linked action plan are updated in Goals. Both changes are recorded in the timeline.', createdAt: new Date().toISOString() }] } : c) }));
   }
 
   function openPlanProposal(next: PlanSuggestion) {
@@ -208,10 +475,13 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     setResource(null);
     setError('');
     setInput('');
+    setEnterOwnDays(false);
     setHistoryOpen(false);
     setProposal(null);
     setPlanProposal(null);
     setActionPlanInvite(null);
+    setChatGuide(null);
+    setChatGuideGoalId('');
   }
 
   function openChat(id: string) {
@@ -220,10 +490,13 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     setResource(null);
     setError('');
     setInput('');
+    setEnterOwnDays(false);
     setHistoryOpen(false);
     setProposal(null);
     setPlanProposal(null);
     setActionPlanInvite(null);
+    setChatGuide(null);
+    setChatGuideGoalId('');
   }
 
   const conversations = [...state.conversations].reverse();
@@ -324,14 +597,34 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
               <Button secondary disabled={busy} onPress={() => { update(st => ({ ...st, coachRequest: undefined })); setInput(''); }}>Start with a different question</Button>
             </Card>}
 
-            {goal && <Text style={s.small}>Current goal: {goal.goal}</Text>}
 
             {!active.messages.length && <Card><Text style={s.body}>{preview ? 'This preview has no live AI connection. You can explore the guides and save a plan on this device.' : 'What would you like support with today? You can ask about a guide, your plan, or something that has been difficult.'}</Text></Card>}
 
-            {active.messages.map(m => <View key={m.id} style={[s.message, m.role === 'user' && s.userMessage]}>
+            {active.messages.map(m => <View key={m.id} style={[s.message, m.role === 'user' && s.userMessage, m.role === 'user' && !!messageReactions[m.id] && { marginTop: 14, overflow: 'visible' }]}>
+              {m.role === 'user' && !!messageReactions[m.id] && (
+                <View
+                  accessible
+                  accessibilityRole="text"
+                  accessibilityLabel={`${state.profile.penguinName} reacted ${messageReactions[m.id]}`}
+                  pointerEvents="none"
+                  style={{
+                    position: 'absolute',
+                    top: -15,
+                    left: 12,
+                    zIndex: 2,
+                    borderRadius: 18,
+                    borderWidth: 1,
+                    borderColor: color.line,
+                    backgroundColor: '#FFFFFF',
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                  }}
+                >
+                  <Text style={{ fontSize: 18, lineHeight: 23 }}>{messageReactions[m.id]}</Text>
+                </View>
+              )}
               <Text style={s.small}>{m.role === 'user' ? 'You' : state.profile.penguinName}</Text>
               <Text selectable style={s.body}>{m.text}</Text>
-              {m.role === 'user' && !m.failed && <Button secondary disabled={busy} onPress={() => openProposal({ operation: 'create', goal: m.text })}>Save this as a goal</Button>}
               {m.failed && <Button secondary disabled={busy} onPress={() => void send(m.text, m.id)}>Retry this message</Button>}
             </View>)}
 
@@ -352,15 +645,27 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
             </View>}
             {actionPlanInvite && !planProposal && <View style={{ backgroundColor: '#F3F6F8', borderRadius: 20, padding: 18, gap: 10, borderWidth: 1, borderColor: color.line }}>
               <Text style={s.eyebrow}>Next step · Action planning</Text>
-              <Text style={s.body}>Would you like some action-plan ideas for “{actionPlanInvite.goal}”?</Text>
+              <Text style={s.body}>Shall we make an action plan?</Text>
               <Button disabled={busy || preview} onPress={() => {
                 const saved = actionPlanInvite;
                 setActionPlanInvite(null);
-                void send(`Yes, help me create an action plan for my saved goal: "${saved.goal}" (goal ID: ${saved.goalId}). Please suggest 2 or 3 realistic starting options based on this goal and what you already know about my preferences, and ask me which fits. Don't assume my schedule or ability.`);
-              }}>Yes, suggest some ideas</Button>
+                void send('Yes', undefined, saved);
+              }}>Yes</Button>
               <Button secondary disabled={busy} onPress={() => { setActionPlanInvite(null); }}>Maybe later</Button>
             </View>}
-            {planProposal && <View style={{ backgroundColor: '#F3F6F8', borderRadius: 20, padding: 18, gap: 9, borderWidth: 1, borderColor: color.line }}>
+            {chatGuide?.completed && <View style={{ backgroundColor: '#F3F6F8', borderRadius: 20, padding: 18, gap: 9, borderWidth: 1, borderColor: color.line }}>
+              <Text style={s.heading}>Your action plan</Text>
+              <Text style={s.small}>For: {state.goals.find(g => g.id === chatGuideGoalId)?.goal}</Text>
+              {(['what', 'when', 'where', 'how', 'barrier', 'alternative', 'cue'] as const).map(field => <View key={field} style={{ gap: 2 }}>
+                <Text style={[s.small, { fontWeight: '600' }]}>{({ what: 'What', when: 'When', where: 'Where', how: 'How', barrier: 'Possible barrier', alternative: 'If that happens', cue: 'Reminder' })[field]}</Text>
+                <Text style={s.body}>{field === 'how' ? (chatGuide.draft.how || '').replace(/ \(Duration: .*\)$/, '') : chatGuide.draft[field] || 'Not specified'}</Text>
+              </View>)}
+              <View style={{ gap: 2 }}><Text style={[s.small, { fontWeight: '600' }]}>Duration</Text><Text style={s.body}>{chatGuideDuration || 'Not specified'}</Text></View>
+              <Button onPress={saveChatGuide}>Yes, save my action plan</Button>
+              <Button secondary onPress={() => { setInput('I want to change something in my action plan.'); setChatGuide(null); }}>Change a detail in chat</Button>
+              <Button secondary onPress={() => setChatGuide(null)}>Not now</Button>
+            </View>}
+            {planProposal && !chatGuide && <View style={{ backgroundColor: '#F3F6F8', borderRadius: 20, padding: 18, gap: 9, borderWidth: 1, borderColor: color.line }}>
               <Text style={s.eyebrow}>{planProposal.operation === 'create' ? 'Your proposed action plan' : 'Proposed plan update'}</Text>
               <Text style={s.small}>For: {state.goals.find(g => g.id === planGoalId)?.goal || 'Select a goal below'}</Text>
               {(['what','when','where','how','barrier','alternative','cue'] as const).filter(field => !!planDraft[field]).map(field => <View key={field} style={{ gap: 2 }}><Text style={[s.small, { fontWeight: '600' }]}>{{what:'What',when:'When',where:'Where',how:'How',barrier:'Possible barrier',alternative:'If that happens',cue:'Reminder'}[field]}</Text><Text style={s.body}>{planDraft[field]}</Text></View>)}
@@ -373,21 +678,34 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
 
             {busy && <PenguinTypingBubble name={state.profile.penguinName} />}
 
-            {resource && <Card>
+            {resource && !chatGuide && <Card>
               <Text style={s.heading}>{GUIDE_DEFINITIONS.find(g => g.id === resource)!.title}</Text>
               <Button onPress={() => onGuide(resource, 'learn')}>Learn the guide first</Button>
               <Button secondary onPress={() => onGuide(resource, 'use')}>Use the guide now</Button>
             </Card>}
 
             <ErrorText>{error}</ErrorText>
-            {!!active.quickReplies.length && <View style={{ gap: 8 }}>
+            {!!chatGuide && !chatGuide.completed && <View style={{ gap: 8 }}>
               <Text style={s.small}>Choose a suggestion, or type your own answer below.</Text>
-              {active.quickReplies.map(option => <Pressable key={option} accessibilityRole="button" disabled={busy || preview} onPress={() => void send(option)} style={{ backgroundColor: color.white, borderRadius: 15, borderWidth: 1, borderColor: color.line, paddingHorizontal: 16, paddingVertical: 14, opacity: busy || preview ? 0.5 : 1 }}><Text style={s.body}>{option}</Text></Pressable>)}
+              {enterOwnDays && <Text style={s.small}>Enter your own days, e.g. Monday, Thursday, Friday.</Text>}
+              {guideChoicesBusy && <Text style={s.small}>Finding ideas for your goal…</Text>}
+              {guideChoices.map(option => <Pressable key={option} accessibilityRole="button" onPress={() => {
+                if (option === 'Choose my own time and days' || option === 'Choose my own duration' || /^(I have my own|Somewhere else|My own backup)/.test(option)) { setInput(''); setEnterOwnDays(option === 'Choose my own time and days'); return; }
+                answerChatGuide(option);
+              }} style={{ backgroundColor: color.white, borderRadius: 15, borderWidth: 1, borderColor: color.line, paddingHorizontal: 16, paddingVertical: 14 }}>
+                <Text style={s.body}>{option}</Text>
+              </Pressable>)}
+              <Button secondary onPress={() => { setChatGuide(null); setChatGuideGoalId(''); setInput(''); }}>Pause action planning</Button>
+            </View>}
+            {!chatGuide && !!active.quickReplies.length && <View style={{ gap: 8 }}>
+              <Text style={s.small}>Choose a suggestion, or type your own answer below.</Text>
+              {enterOwnDays && <Text style={s.small}>Type the days that work for you (for example, Monday, Thursday, Friday), then tap Send message.</Text>}
+              {active.quickReplies.map(option => <Pressable key={option} accessibilityRole="button" disabled={busy || preview} onPress={() => { if (/^(choose my own days|my own days|select my own days|other days)$/i.test(option.trim())) { setEnterOwnDays(true); setInput(''); return; } if (/^(my own idea|something else|another idea|other)$/i.test(option.trim())) { setEnterOwnDays(false); setInput(''); return; } void send(option); }} style={{ backgroundColor: color.white, borderRadius: 15, borderWidth: 1, borderColor: color.line, paddingHorizontal: 16, paddingVertical: 14, opacity: busy || preview ? 0.5 : 1 }}><Text style={s.body}>{option}</Text></Pressable>)}
             </View>}
           </ScrollView>
 
           <View style={{ padding: 16, backgroundColor: color.white, gap: 10, borderTopWidth: 1, borderTopColor: color.line }}>
-            <Field label={`Message ${state.profile.penguinName}`} value={input} onChangeText={setInput} multiline editable={!busy && !preview} maxLength={3000} placeholder={preview ? 'Live coaching is unavailable in preview' : 'Message your penguin or type another idea…'} />
+            <Field label={`Message ${state.profile.penguinName}`} value={input} onChangeText={setInput} multiline editable={!busy && !preview} maxLength={3000} placeholder={preview ? 'Live coaching is unavailable in preview' : chatGuideChoosingDuration ? 'e.g. 15 minutes' : enterOwnDays ? 'e.g. Monday, Thursday, Friday' : 'Message your penguin or type another idea…'} />
             <Button busy={busy} disabled={preview || !input.trim()} onPress={() => void send(input)}>Send message</Button>
           </View>
         </View>
