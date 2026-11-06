@@ -25,7 +25,7 @@ import { AskCoach, GuideId, Tab } from './types';
 import { color, styles as s } from './theme';
 import { Button, Card, ErrorText, Field } from './ui';
 import { Learn, Community } from './screens';
-import { MuseHome, MuseGoals, MuseFeed } from './MuseScreens';
+import { MuseHome, MuseGoals } from './MuseScreens';
 import { Guide } from './Guide';
 import { Coach } from './Coach';
 import { PenguinHeader, PenguinSettings } from './Penguin';
@@ -34,13 +34,12 @@ import {
   saveWebsiteSession,
 } from './website';
 
-const tabs: Tab[] = ['Today', 'Learn', 'Goals', 'Feed', 'Compassion Hub'];
+const tabs: Tab[] = ['Today', 'Learn', 'Goals', 'Compassion Hub'];
 
 const icons = [
   'sunny-outline',
   'trail-sign-outline',
   'flag-outline',
-  'sparkles-outline',
   'chatbubble-ellipses-outline',
 ] as const;
 
@@ -295,7 +294,7 @@ function Shell({
     useState(false);
 
   const go = (next: Tab) => {
-    setTab(next);
+    setTab(next === 'Feed' ? 'Today' : next);
     track('page_viewed', { page: next });
   };
 
@@ -407,39 +406,6 @@ function Shell({
         }
       />
 
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Retry saving progress"
-        onPress={() => void store.sync()}
-        style={{
-          paddingHorizontal: 22,
-          paddingVertical: 4,
-        }}
-      >
-        <Text style={s.small}>
-          {store.status}
-        </Text>
-      </Pressable>
-
-      {!!state.buddyFeedback && (
-        <View
-          style={{
-            paddingHorizontal: 22,
-            paddingVertical: 6,
-          }}
-        >
-          <Text
-            accessibilityLiveRegion="polite"
-            style={[
-              s.small,
-              { color: color.green },
-            ]}
-          >
-            {state.buddyFeedback.message}
-          </Text>
-        </View>
-      )}
-
 
       {!!store.error && (
         <View style={{ padding: 12 }}>
@@ -468,19 +434,17 @@ function Shell({
           keyboardShouldPersistTaps="handled"
           contentContainerStyle={s.content}
         >
-          {tab === 'Today' && <MuseHome onGuide={startGuide} onCoach={askCoach} onGoals={() => go('Goals')} onLearn={() => go('Learn')} onCommunity={() => go('Community')} onFeed={() => go('Feed')} />}
+          {tab === 'Today' && <MuseHome onGuide={startGuide} onCoach={askCoach} onGoals={() => go('Goals')} onLearn={() => go('Learn')} onCommunity={() => go('Community')} />}
 
           {tab === 'Learn' && (
             <Learn
               onGuide={startGuide}
-              onResume={() =>
-                setGuideOpen(true)
-              }
+              onResume={() => setGuideOpen(true)}
+              onCoach={askCoach}
             />
           )}
 
           {tab === 'Goals' && <MuseGoals onGuide={startGuide} onCoach={askCoach} />}
-          {tab === 'Feed' && <MuseFeed onGuide={startGuide} onCoach={askCoach} onLearn={() => go('Learn')} />}
         </ScrollView>
       )}
 

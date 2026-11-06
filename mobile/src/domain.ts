@@ -1,6 +1,6 @@
 import type { Activity, AppState, BuddyProfile, CoachContext, Conversation, Goal, GuideView, HomeworkKind, Plan, Tab } from './types';
 
-export const defaultProfile = (): BuddyProfile => ({ displayName: '', pronouns: '', penguinName: 'Pip', onboarded: false });
+export const defaultProfile = (): BuddyProfile => ({ displayName: '', pronouns: '', penguinName: 'Pip', onboarded: false, penguinColour: 'blue', glassesColour: 'none' });
 export const energyEarned = (state: AppState) => state.homeworkAwards.reduce((sum, award) => sum + award.energy, 0);
 const energyFor: Record<HomeworkKind, number> = { guide_learning: 20, guide_practice: 20, activity: 15, reflection: 5 };
 export function awardHomework(state: AppState, kind: HomeworkKind, sourceId: string, label: string): AppState {
@@ -21,7 +21,7 @@ export function completeGoal(state: AppState, goalId: string): AppState {
   const goal = state.goals.find(g => g.id === goalId);
   if (!goal) throw new Error('This goal is unavailable.');
   const completed = !goal.completed;
-  return { ...state, goals: state.goals.map(g => g.id === goalId ? { ...g, completed, completedAt: completed ? new Date().toISOString() : undefined } : g),
+  return { ...state, goals: state.goals.map(g => g.id === goalId ? { ...g, completed, completedAt: completed ? new Date().toISOString() : undefined, statusHistory: [...(g.statusHistory || []), { completed, changedAt: new Date().toISOString() }] } : g),
     buddyFeedback: { message: completed ? `Good job${state.profile.displayName ? ', ' + state.profile.displayName : ''}! You completed your goal. Take a moment to notice what helped.` : 'You can revisit a goal and adjust it at your own pace.', createdAt: new Date().toISOString() } };
 }
 
@@ -33,7 +33,7 @@ export const monday = (date = new Date()) => {
 export const localDate = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 export const newConversation = (id: string): Conversation => ({ id, sessionId: `mobile-${id}`, title: 'New conversation', messages: [], quickReplies: [] });
 export function emptyState(id: string): AppState {
-  return { version: 1, revision: 0, profile: defaultProfile(), homeworkAwards: [], goals: [], plans: [], activities: [], reflections: [], completedLessons: [],
+  return { version: 1, revision: 0, profile: defaultProfile(), homeworkAwards: [], goals: [], plans: [], monitoringPlans: [], monitoringCheckIns: [], activities: [], reflections: [], completedLessons: [],
     conversations: [newConversation(id)], activeConversationId: id, pendingEvents: [], dirty: false, updatedAt: new Date().toISOString() };
 }
 export function confirmedGoal(state: AppState): Goal | null { return state.goals.find(g => g.confirmed && !g.completed) || null; }
@@ -45,7 +45,7 @@ export function coachContext(state: AppState, participantId: string, screen: Tab
     penguin: { name: state.profile.penguinName, energy_earned: energyEarned(state), homework_completed: state.homeworkAwards.length },
     requested_help: state.coachRequest || null, confirmed_goal: confirmedGoal(state),
     goals: selected(state.goals, state.coachRequest?.goalId, 10), action_plans: selected(state.plans, state.coachRequest?.planId, 10), activities: selected(state.activities.slice().reverse(), state.coachRequest?.activityId, 30),
-    monitoring_plan: state.monitoring || null, recent_reflections: state.reflections.slice(-5),
+    monitoring_plan: state.monitoring || null, monitoring_plans: (state.monitoringPlans || []).slice(-10), monitoring_check_ins: (state.monitoringCheckIns || []).slice(-20), recent_reflections: state.reflections.slice(-5),
     completed_lessons: state.completedLessons, guide_progress: state.guide || null,
     conversation_history: recentMessages.map(({ role, text }) => ({ role, text })) };
 }
@@ -65,6 +65,11 @@ export function saveGuideDraft(state: AppState, guide: GuideView, id: string): A
     const plan: Plan = { id, goalId: goal.id, what: d.what, when: d.when, where: d.where, how: d.how,
       barrier: d.barrier, alternative: d.alternative, cue: d.cue, createdAt: new Date().toISOString() };
     return awardHomework({ ...state, plans: [plan, ...state.plans], guide: undefined }, 'guide_practice', guide.attemptId || id, 'Action-planning exercise');
+  }
+  if (guide.guide_id === 'self_talk') {
+    for (const field of ['situation', 'original', 'alternative', 'when']) if (!d[field]?.trim()) throw new Error('Finish each part of your self-talk reflection.');
+    const note = `Positive self-talk practice\nSituation: ${d.situation}\nOriginal thought: ${d.original}\nSupportive alternative: ${d.alternative}\nWhen to use it: ${d.when}`;
+    return { ...state, reflections: [...state.reflections, { id, text: note, createdAt: new Date().toISOString() }], guide: undefined };
   }
   for (const field of ['what', 'how', 'when', 'frequency', 'stage']) if (!d[field]?.trim()) throw new Error('Finish each part of your monitoring plan.');
   return awardHomework({ ...state, monitoring: { what: d.what, how: d.how, when: d.when, frequency: d.frequency, stage: d.stage }, guide: undefined }, 'guide_practice', guide.attemptId || id, 'Self-monitoring exercise');
@@ -112,8 +117,8 @@ export function decodeState(raw: unknown): AppState | null {
   const profile = s.profile;
   return { ...s, profile: profile && typeof profile.penguinName === 'string' && profile.penguinName.trim() ? {
     displayName: typeof profile.displayName === 'string' ? profile.displayName.slice(0, 60) : '',
-    pronouns: typeof profile.pronouns === 'string' ? profile.pronouns.slice(0, 60) : '', penguinName: profile.penguinName.slice(0, 30), onboarded: profile.onboarded === true,
-  } : defaultProfile(), homeworkAwards: s.homeworkAwards || [] };
+    pronouns: typeof profile.pronouns === 'string' ? profile.pronouns.slice(0, 60) : '', penguinName: profile.penguinName.slice(0, 30), onboarded: profile.onboarded === true, penguinColour: typeof profile.penguinColour === 'string' ? profile.penguinColour : 'blue', glassesColour: typeof profile.glassesColour === 'string' ? profile.glassesColour : 'none',
+  } : defaultProfile(), homeworkAwards: s.homeworkAwards || [], monitoringPlans: Array.isArray(s.monitoringPlans) ? s.monitoringPlans : [], monitoringCheckIns: Array.isArray(s.monitoringCheckIns) ? s.monitoringCheckIns : [] };
 }
 export function mergeRestoredState(local: AppState, remote: AppState): AppState {
   const merge = <T extends { id: string }>(a: T[], b: T[]) => [...a, ...b.filter(x => !a.some(y => y.id === x.id))];
@@ -121,5 +126,5 @@ export function mergeRestoredState(local: AppState, remote: AppState): AppState 
     activities: merge(local.activities, remote.activities), reflections: merge(local.reflections, remote.reflections),
     conversations: merge(local.conversations, remote.conversations), completedLessons: [...new Set([...local.completedLessons, ...remote.completedLessons])],
     profile: local.profile.onboarded ? local.profile : remote.profile, homeworkAwards: merge(local.homeworkAwards, remote.homeworkAwards),
-    buddyFeedback: local.buddyFeedback || remote.buddyFeedback, monitoring: local.monitoring || remote.monitoring, dirty: true };
+    buddyFeedback: local.buddyFeedback || remote.buddyFeedback, monitoring: local.monitoring || remote.monitoring, monitoringPlans: merge(local.monitoringPlans || [], remote.monitoringPlans || []), monitoringCheckIns: merge(local.monitoringCheckIns || [], remote.monitoringCheckIns || []), dirty: true };
 }

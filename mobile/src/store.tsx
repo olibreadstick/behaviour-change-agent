@@ -8,6 +8,18 @@ import { loadLegacyProfile, loadRemote, postEvent, saveRemote } from './api';
 import { browserLegacyRecords, legacyProfile } from './website';
 
 export const uuid = () => Crypto.randomUUID();
+// Do not leave participants on the loading screen while a sleeping backend wakes up.
+// A timeout only stops waiting during startup; it does not delete device or cloud data.
+function startupTimeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error('Startup cloud request timed out')), milliseconds);
+    promise.then(
+      value => { clearTimeout(timeout); resolve(value); },
+      error => { clearTimeout(timeout); reject(error); },
+    );
+  });
+}
+
 type Update = (state: AppState) => AppState;
 interface Store { state: AppState; ready: boolean; status: string; error: string; update: (fn: Update) => void;
   track: (type: string, metadata?: UsageEvent['metadata']) => void; sync: () => Promise<void>; }
@@ -36,7 +48,7 @@ export function AppStore({ participantId, preview, children }: { participantId: 
     const all = [...records, ...browserLegacyRecords(participantId).filter(r => !records.some(remote => remote.key === r.key))];
     let restored = migrateLegacy(current, all, participantId);
     if (!restored.profile.onboarded && !restored.profile.displayName) {
-      try { restored = legacyProfile(restored, await loadLegacyProfile(participantId)); } catch { /* Keep optional onboarding available. */ }
+      try { restored = legacyProfile(restored, await startupTimeout(loadLegacyProfile(participantId), 5000)); } catch { /* Keep optional onboarding available. */ }
     }
     return { ...restored, dirty: true };
   };
@@ -47,7 +59,7 @@ export function AppStore({ participantId, preview, children }: { participantId: 
     setStatus('Saving progress');
     try {
       if (!cloudLoaded.current) {
-        const records = await loadRemote(participantId);
+        const records = await startupTimeout(loadRemote(participantId), 12000);
         const record = records.find(r => r.key === key);
         const remote = record ? decodeState(JSON.parse(record.payload)) : null;
         publish(await restoreLegacy(remote ? mergeRestoredState(ref.current, remote) : ref.current, records));
@@ -75,7 +87,7 @@ export function AppStore({ participantId, preview, children }: { participantId: 
       } catch { setError('Unable to restore the saved device copy.'); }
       if (!preview) {
         try {
-          const records = await loadRemote(participantId);
+          const records = await startupTimeout(loadRemote(participantId), 12000);
           const remoteRecord = records.find(r => r.key === key);
           const remote = remoteRecord ? decodeState(JSON.parse(remoteRecord.payload)) : null;
           if (remote && !selected.dirty) selected = { ...remote, pendingEvents: selected.pendingEvents };

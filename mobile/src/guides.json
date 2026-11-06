@@ -234,5 +234,81 @@
         "field": "frequency"
       }
     ]
+  },
+  {
+    "id": "self_talk",
+    "title": "Talking to Yourself About Physical Activity",
+    "subtitle": "Positive self-talk, self-praise, and positive re-framing",
+    "resource": "talking-to-yourself-about-physical-activity.pdf",
+    "lessons": [
+      {
+        "title": "Three skills for talking to yourself",
+        "body": "This guide introduces Positive Self-Talk, Self-Praise, and Positive Re-framing. Notice how the words you use about physical activity affect your motivation."
+      },
+      {
+        "title": "Positive self-talk",
+        "body": "Motivational self-talk can support confidence, mood, and effort. Instructional self-talk focuses on how to perform an activity. Choose statements that feel positive, freely chosen, and motivating to you; saying them aloud may help."
+      },
+      {
+        "title": "Self-praise",
+        "body": "Self-praise recognizes progress or rewards effort in physical activity. You can choose a statement that acknowledges what you have done and when you would like to use it."
+      },
+      {
+        "title": "Positive re-framing",
+        "body": "Notice all-or-nothing thinking, mental filtering, catastrophizing, or emotional reasoning. Identify the thought, consider evidence for and against it, and build a more balanced thought."
+      },
+      {
+        "title": "Reflect on what helps",
+        "body": "After trying self-talk, self-praise, or positive re-framing, reflect on what was useful and whether it affected your engagement in physical activity."
+      }
+    ],
+    "practice": [
+      {
+        "title": "Choose your self-talk",
+        "body": "Choose a phrase that fits you. You may choose motivational or instructional self-talk.",
+        "question": "What positive self-talk statement would you like to use?",
+        "field": "statement"
+      },
+      {
+        "title": "Type of self-talk",
+        "body": "Motivational supports confidence, mood, or effort; instructional focuses on the process of an activity.",
+        "question": "Would you describe it as motivational or instructional?",
+        "field": "type",
+        "options": [
+          "Motivational",
+          "Instructional"
+        ]
+      },
+      {
+        "title": "Use your statement",
+        "body": "Consider when this statement is useful and how often to repeat it.",
+        "question": "When and how often would you like to use it?",
+        "field": "when"
+      },
+      {
+        "title": "Self-praise",
+        "body": "Choose words that recognize effort or progress.",
+        "question": "What would you like to tell yourself after making progress?",
+        "field": "praise"
+      },
+      {
+        "title": "Notice a difficult thought",
+        "body": "You can also practise positive re-framing.",
+        "question": "What difficult thought about physical activity would you like to work through?",
+        "field": "thought"
+      },
+      {
+        "title": "Check the evidence",
+        "body": "Think about evidence for and against your thought.",
+        "question": "What evidence supports or challenges that thought?",
+        "field": "evidence"
+      },
+      {
+        "title": "Find a balanced thought",
+        "body": "A re-framed thought can be realistic rather than forced positivity.",
+        "question": "What balanced thought fits the evidence?",
+        "field": "reframe"
+      }
+    ]
   }
 ]

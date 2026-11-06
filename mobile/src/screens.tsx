@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Image, Linking, Platform, Pressable, ScrollView, Text, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { loadCommunity, sharePost } from './api';
 import { useAppStore, uuid } from './store';
-import { awardHomework, completeActivity, completeGoal, confirmedGoal, energyEarned, localDate, monday, validActivity } from './domain';
+import { awardHomework, completeActivity, completeGoal, confirmedGoal, localDate, monday, validActivity } from './domain';
 import { GUIDE_DEFINITIONS } from './guide-engine.cjs';
 import { AskCoach, CommunityPost, GuideId } from './types';
 import { color, styles as s } from './theme';
@@ -23,18 +24,76 @@ export function Today({ onGuide, onCoach, onResume }: { onGuide: GuideStarter; o
     {goal && !goalPlan && <Card><Text style={s.eyebrow}>Your next step</Text><Text style={s.heading}>Turn your goal into a plan</Text><Text style={s.body}>Your goal is saved. Now choose the missing details, such as when and where it will happen and what you can do if something gets in the way.</Text><Button onPress={() => onGuide('action_planning_problem_solving', 'use')}>Build my action plan</Button></Card>}
     <Card><Text style={s.eyebrow}>Your learning path</Text><Text style={s.heading}>{nextGuide.title}</Text><Text style={s.body}>{nextGuide.subtitle}</Text><Button onPress={() => onGuide(nextGuide.id, 'learn')}>Try a short lesson</Button></Card>
     {!!todays.length && <Card><Text style={s.heading}>On your plan today</Text>{todays.map(a => <Text key={a.id} style={s.body}>{a.time} · {a.title}{a.status === 'completed' ? ' · Completed' : ''}</Text>)}</Card>}
-    <HomeworkSummary />
     <Text style={s.small}>You can return, revise, and start again whenever you need.</Text></>;
 }
-export function Learn({ onGuide, onResume }: { onGuide: GuideStarter; onResume: () => void }) {
-  const { state, track } = useAppStore(); const [error, setError] = useState('');
-  async function openResource(id: GuideId | 'self_talk') { try { const origin = Platform.OS === 'web' ? window.location.origin : 'https://behaviour-change-agent.vercel.app'; await Linking.openURL(`${origin}/resources/${id === 'self_talk' ? 'talking-to-yourself-about-physical-activity.pdf' : definition(id).resource}`); track('resource_opened', { resource: id, source: 'learn' }); } catch (e) { setError(explainError(e)); } }
-  return <><Text style={s.eyebrow}>Learn · practise · make it yours</Text><Text style={s.title}>Your learning path</Text><Text style={s.body}>Choose a short lesson or apply a guide directly. Every guide is available at your own pace.</Text>
-    <ErrorText>{error}</ErrorText>{state.guide && <Button secondary onPress={onResume}>Resume your current guide</Button>}
-    <View style={s.path}>{GUIDE_DEFINITIONS.map((g, i) => <Card key={g.id}><View style={s.row}><View style={s.badge}><Text style={s.heading}>{state.completedLessons.includes(g.id) ? '✓' : i + 1}</Text></View><View style={{ flex: 1 }}><Text style={s.heading}>{g.title}</Text><Text style={s.small}>{g.subtitle}</Text></View></View>
-      <Text style={s.small}>{g.lessons.length} short steps{state.completedLessons.includes(g.id) ? ' · Practised' : ''}</Text>
-      <Button onPress={() => onGuide(g.id, 'learn')}>Learn the guide first</Button><Button secondary onPress={() => onGuide(g.id, 'use')}>Use the guide now</Button><Button secondary onPress={() => void openResource(g.id)}>Read the original guide</Button></Card>)}</View><Card><Text style={s.heading}>Talking to yourself about physical activity</Text><Text style={s.body}>Explore self-praise and compassionate ways to reframe a difficult moment.</Text><Button secondary onPress={() => void openResource('self_talk')}>Read the self-talk resource</Button></Card></>;
+export function Learn({ onGuide, onResume, onCoach }: { onGuide: GuideStarter; onResume: () => void; onCoach: AskCoach }) {
+  const { track } = useAppStore();
+  const [reading, setReading] = useState<GuideId | null>(null);
+  const chosen = GUIDE_DEFINITIONS.find(g => g.id === reading) || null;
+  // Lessons are bundled with the app. Unlike external PDF links, opening one
+  // cannot navigate to a login fallback or lose the participant's session.
+  const openOriginalPdf = () => {
+    if (!chosen) return;
+    const path = `/resources/${chosen.resource}`;
+    if (Platform.OS === 'web' && typeof window !== 'undefined') {
+      void Linking.openURL(`${window.location.origin}${path}`);
+    } else {
+      // Keep the reading view available when a bundled PDF is not accessible natively.
+      void Linking.openURL(path);
+    }
+  };
+  return <View style={{ gap: 20, paddingBottom: 28 }}>
+    {chosen ? <>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingTop: 4, marginBottom: 12 }}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Back to learning path" onPress={() => setReading(null)} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 8 }}>
+          <Ionicons name="chevron-back" size={27} color={color.ink} /><Text style={s.body}>Back</Text>
+        </Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Open original PDF" onPress={openOriginalPdf} style={{ minHeight: 44, paddingHorizontal: 14, borderRadius: 22, backgroundColor: color.white, borderWidth: 1, borderColor: color.line, flexDirection: 'row', alignItems: 'center', gap: 7 }}>
+          <Ionicons name="document-text-outline" size={20} color={color.blue}/><Text style={[s.small, { color: color.blue, fontWeight: '600' }]}>PDF</Text>
+        </Pressable>
+      </View>
+      <Text style={[s.title, { fontSize: 34, lineHeight: 42 }]}>{chosen.title}</Text>
+      <Text style={[s.body, { fontSize: 19, lineHeight: 29 }]}>{chosen.subtitle}</Text>
+      <View style={{ height: 1, backgroundColor: color.line, marginHorizontal: -22 }} />
+      {chosen.lessons.map((lesson, i) => <View key={`${chosen.id}-${i}`} style={{ borderTopWidth: 1, borderTopColor: color.line, paddingTop: 18, gap: 10 }}>
+        <Text style={s.small}>Part {i+1} of {chosen.lessons.length}</Text>
+        <Text style={s.heading}>{lesson.title}</Text>
+        <Text style={s.body}>{lesson.body}</Text>
+      </View>)}
+      <Button secondary onPress={() => {
+        const prompt = chosen.id === 'self_talk' ? 'Can we practise compassionate self-talk about my physical activity goal?' : chosen.id === 'goal_setting'
+          ? 'Can you help me create or adjust a goal based on what I just read?'
+          : chosen.id === 'self_monitoring'
+            ? 'Can we work through a self-monitoring plan together, one question at a time?'
+            : 'Can you help me build an action plan for my saved goal, one question at a time?';
+        onCoach({kind: 'guide_help', prompt});
+      }}>Discuss with Pip</Button>
+    </> : <>
+      <View style={{ gap: 8 }}>
+        <Text style={s.eyebrow}>Learn at your own pace</Text>
+        <Text style={[s.title, { fontSize: 34 }]}>Your learning path</Text>
+        <Text style={s.body}>Read about a strategy here, or discuss it with Pip in chat.</Text>
+      </View>
+      <View style={{ borderTopWidth: 1, borderTopColor: color.line }}>
+        {GUIDE_DEFINITIONS.map((guide, index) => <View key={guide.id} style={{ borderBottomWidth: 1, borderBottomColor: color.line, paddingVertical: 20, gap: 10 }}>
+          <View style={{ flexDirection: 'row', gap: 14, alignItems: 'flex-start' }}>
+            <View style={[s.badge, { width: 36, height: 36, borderRadius: 18 }]}><Text style={[s.body, { color: color.blue }]}>{index + 1}</Text></View>
+            <View style={{ flex: 1, gap: 4 }}>
+              <Text style={s.heading}>{guide.title}</Text>
+              <Text style={s.body}>{guide.subtitle}</Text>
+            </View>
+          </View>
+          <Pressable accessibilityRole="button" accessibilityLabel={`Read ${guide.title}`} onPress={() => { setReading(guide.id); track('learning_content_opened', { guide: guide.id }); }} style={{ paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={[s.body, { color: color.blue }]}>Read guide</Text>
+            <Ionicons name="chevron-forward" size={22} color={color.muted}/>
+          </Pressable>
+        </View>)}
+      </View>
+
+    </>}
+  </View>;
 }
+
 export function MyPlan({ onGuide, onCoach }: { onGuide: GuideStarter; onCoach: AskCoach }) {
   const { state, update, track } = useAppStore();
   const goal = confirmedGoal(state);
@@ -489,7 +548,7 @@ export function MyPlan({ onGuide, onCoach }: { onGuide: GuideStarter; onCoach: A
             ? 'Completed · reopen'
             : state.homeworkAwards.some(award => award.id === `activity:${a.id}`)
               ? 'Mark completed'
-              : 'Mark completed · +15 energy'}
+              : 'Mark completed'}
         </Button>
       </Card>)}
 
@@ -517,20 +576,6 @@ export function MyPlan({ onGuide, onCoach }: { onGuide: GuideStarter; onCoach: A
 export function ReflectionPanel({ onCoach }: { onCoach: AskCoach }) {
   const { state, update, track } = useAppStore(); const [reflection, setReflection] = useState('');
   function submit() { const id = uuid(); update(st => awardHomework({ ...st, reflections: [...st.reflections, { id, text: reflection.trim(), createdAt: new Date().toISOString() }] }, 'reflection', id, 'A moment of reflection')); track('reflection_saved'); setReflection(''); }
-  return <><Card><Text style={s.heading}>A moment to reflect</Text><Text style={s.body}>What helped? What felt difficult? Noticing either is worthwhile.</Text><Field label="Your reflection" value={reflection} onChangeText={setReflection} multiline maxLength={3000} /><Button disabled={!reflection.trim()} onPress={submit}>Submit reflection · +5 energy</Button></Card>
+  return <><Card><Text style={s.heading}>A moment to reflect</Text><Text style={s.body}>What helped? What felt difficult? Noticing either is worthwhile.</Text><Field label="Your reflection" value={reflection} onChangeText={setReflection} multiline maxLength={3000} /><Button disabled={!reflection.trim()} onPress={submit}>Submit reflection</Button></Card>
     {state.reflections.slice(-5).reverse().map(r => <Card key={r.id}><Text style={s.small}>{new Date(r.createdAt).toLocaleDateString()}</Text><Text style={s.body}>{r.text}</Text><Button secondary onPress={() => onCoach({ kind: 'reflection', subject: r.text, prompt: `Help me reflect on this and find a compassionate next step: ${r.text}` })}>Discuss this with my penguin</Button></Card>)}</>;
-}
-export function HomeworkSummary() {
-  const { state } = useAppStore();
-  return <Card><Text style={s.eyebrow}>Your penguin’s energy</Text><Text style={s.title}>{energyEarned(state)} energy</Text><Text style={s.body}>Both guide exercises and real-world activities count as homework. Reflections count too.</Text><Text style={s.small}>{state.completedLessons.length} of 3 guides practised · {state.homeworkAwards.length} homework submissions</Text><View style={s.progressTrack}><View style={[s.progressFill, { width: `${state.completedLessons.length / 3 * 100}%` }]} /></View>{state.homeworkAwards.slice(-4).reverse().map(a => <View key={a.id} style={s.row}><Text style={[s.small, { flex: 1 }]}>{a.label}</Text><Text style={[s.small, { color: color.green }]}>+{a.energy}</Text></View>)}</Card>;
-}
-export function Community({ participantId, preview, onCoach }: { participantId: string; preview: boolean; onCoach: AskCoach }) {
-  const { track } = useAppStore(); const [posts, setPosts] = useState<CommunityPost[]>([]); const [concept, setConcept] = useState(GUIDE_DEFINITIONS[0].title); const [text, setText] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState('');
-  const [barrier, setBarrier] = useState('');
-  useEffect(() => { if (!preview) loadCommunity().then(setPosts).catch(e => setError(explainError(e))); }, []);
-  async function share() { setBusy(true); setError(''); try { const p = { id: uuid(), concept, text: text.trim(), createdAt: new Date().toISOString(), authorId: participantId }; await sharePost(p); setPosts([p, ...posts]); setText(''); track('community_post_created', { concept }); } catch (e) { setError(explainError(e)); } finally { setBusy(false); } }
-  return <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}><Text style={s.eyebrow}>Community · problem solving</Text><Text style={s.title}>Find a way forward</Text><Card><Text style={s.heading}>What is getting in the way?</Text><Field label="A barrier you’d like help with" value={barrier} onChangeText={setBarrier} multiline maxLength={1000} /><Button disabled={!barrier.trim()} onPress={() => onCoach({ kind: 'plan_support', subject: barrier, prompt: `Help me problem-solve this barrier and consider practical alternatives: ${barrier}` })}>Problem-solve with my penguin</Button></Card>
-    <Text style={s.body}>Share a tip you choose to make visible to other participants.</Text><Card><Text style={s.heading}>Which guide is your tip about?</Text>{GUIDE_DEFINITIONS.map(g => <Button secondary={concept !== g.title} key={g.id} onPress={() => setConcept(g.title)}>{g.title}</Button>)}<Field label="Your tip" value={text} onChangeText={setText} multiline maxLength={2000} /><Button busy={busy} disabled={preview || !text.trim()} onPress={() => void share()}>Share with the community</Button>{preview && <Text style={s.small}>Community sharing is available with a connected participant account.</Text>}</Card>
-    <ErrorText>{error}</ErrorText>{posts.map(p => <Card key={p.id}><Text style={s.eyebrow}>{p.concept}</Text><Text style={s.body}>{p.text}</Text><Button secondary onPress={() => onCoach({ kind: 'community_tip', subject: p.text, prompt: `Help me decide whether this community tip fits my goal and circumstances: ${p.text}` })}>Explore this tip with my penguin</Button></Card>)}
-  </ScrollView>;
 }
