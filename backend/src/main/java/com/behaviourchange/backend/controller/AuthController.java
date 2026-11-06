@@ -4,6 +4,8 @@ import com.behaviourchange.backend.dto.AuthResponse;
 import com.behaviourchange.backend.dto.LoginRequest;
 import com.behaviourchange.backend.dto.SignupRequest;
 import com.behaviourchange.backend.service.AuthService;
+import com.behaviourchange.backend.security.CoachSessionService;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,9 +17,13 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final CoachSessionService coachSessions;
+    private final ObjectMapper mapper;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, CoachSessionService coachSessions, ObjectMapper mapper) {
         this.authService = authService;
+        this.coachSessions = coachSessions;
+        this.mapper = mapper;
     }
 
     @PostMapping("/signup")
@@ -28,7 +34,10 @@ public class AuthController {
             AuthResponse response =
                     authService.signup(request);
 
-            return ResponseEntity.ok(response);
+            // Preserve the existing AuthResponse JSON shape without assuming DTO accessor names.
+            String id = mapper.valueToTree(response).path("participantId").asText("");
+            if (id.isBlank()) throw new IllegalStateException("Missing participant ID in authentication response");
+            return ResponseEntity.ok(Map.of("participantId", id, "sessionToken", coachSessions.issue(id)));
 
         } catch (IllegalArgumentException exception) {
 
@@ -51,7 +60,10 @@ public class AuthController {
             AuthResponse response =
                     authService.login(request);
 
-            return ResponseEntity.ok(response);
+            // Preserve the existing AuthResponse JSON shape without assuming DTO accessor names.
+            String id = mapper.valueToTree(response).path("participantId").asText("");
+            if (id.isBlank()) throw new IllegalStateException("Missing participant ID in authentication response");
+            return ResponseEntity.ok(Map.of("participantId", id, "sessionToken", coachSessions.issue(id)));
 
         } catch (IllegalArgumentException exception) {
 

@@ -11,6 +11,8 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import com.behaviourchange.backend.security.CoachSessionService;
+import com.behaviourchange.backend.security.CoachRateLimiter;
 
 import java.io.InputStream;
 import java.net.URI;
@@ -21,10 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
 
-/** Development-only adapter of the archived two-agent n8n workflow.
- *  Never expose this route to research participants before adding authentication,
- *  authorization, rate limits, and an institutional privacy review.
- */
+/** Two-agent coaching adapter. Production use additionally requires institutional privacy approval. */
 @RestController
 @RequestMapping("/api/coach")
 public class GeminiCoachController {
@@ -38,12 +37,17 @@ public class GeminiCoachController {
     private final String model;
     private final boolean enabled;
     private final String key;
+    private final CoachSessionService coachSessions;
+    private final CoachRateLimiter rateLimiter;
 
     public GeminiCoachController(ObjectMapper mapper,
         @Value("${GEMINI_API_KEY:}") String key,
         @Value("${GEMINI_MODEL:gemini-3.5-flash-lite}") String model,
-        @Value("${GEMINI_DEV_ENABLED:false}") boolean enabled) throws Exception {
-        this.mapper = mapper; this.key = key; this.model = model; this.enabled = enabled;
+        @Value("${GEMINI_DEV_ENABLED:false}") boolean devEnabled,
+        @Value("${COACH_PRODUCTION_ENABLED:false}") boolean productionEnabled,
+        CoachSessionService coachSessions, CoachRateLimiter rateLimiter) throws Exception {
+        this.mapper = mapper; this.key = key; this.model = model; this.enabled = devEnabled || productionEnabled;
+        this.coachSessions = coachSessions; this.rateLimiter = rateLimiter;
         this.assessmentPrompt = resource("gemini/assessment-system.txt");
         this.coachingPrompt = resource("gemini/coaching-system.txt");
         this.assessmentSchema = mapper.readTree(resource("gemini/assessment-schema-original.json"));
@@ -63,9 +67,10 @@ public class GeminiCoachController {
         }
     }
 
-    @CrossOrigin(origins = {"http://localhost:3000", "http://localhost:8081", "http://localhost:19006"})
+    @CrossOrigin(origins = {"http://localhost:3000", "http://localhost:8081", "http://localhost:19006", "https://behaviour-change-agent.vercel.app"})
     @PostMapping(value = "/message", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<String> message(@RequestBody String rawRequest) throws Exception {
+    public ResponseEntity<String> message(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                          @RequestBody String rawRequest) throws Exception {
         JsonNode request;
         try {
             request = mapper.readTree(rawRequest);
@@ -76,7 +81,10 @@ public class GeminiCoachController {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Expected a JSON object");
         }
         if (!enabled) throw new ResponseStatusException(HttpStatus.NOT_FOUND);
-        if (key.isBlank()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Gemini development key not configured");
+        String authenticatedParticipant = coachSessions.requireParticipant(authorization);
+        if (rawRequest.length() > 85000) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Request too large");
+        rateLimiter.requireCapacity(authenticatedParticipant);
+        if (key.isBlank()) throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,"Gemini key not configured");
         String action = request.path("action").asText("sendMessage");
         if (!"sendMessage".equals(action)) throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Unsupported coaching action");
         String session = request.path("sessionId").asText("");
