@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useAppStore, uuid } from './store';
 import { coachContext, confirmedGoal, monday, newConversation, saveGuideDraft } from './domain';
-import { sendCoach, request, COACH_URL } from './api';
+import { sendCoach, request, COACH_URL, GEMINI_COACH_URL } from './api';
 import { GUIDE_DEFINITIONS, guideResponse } from './guide-engine.cjs';
 import { GoalSuggestion, PlanSuggestion, GuideId, GuideView } from './types';
 import { color, styles as s } from './theme';
@@ -32,18 +32,142 @@ const penguinImage = require('../assets/coach-penguin.png');
 // Only suggest a schedule when the frequency is explicit; otherwise ask for their own days.
 function goalDaysPerWeek(goalText: string): number | null {
   const text = goalText.toLowerCase();
-  const wordNumbers: Record<string, number> = { once: 1, twice: 2, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
-  const number = '(once|twice|one|two|three|four|five|six|seven|[1-7])';
+  const wordNumbers: Record<string, number> = {
+    once: 1, twice: 2, one: 1, two: 2, three: 3,
+    four: 4, five: 5, six: 6, seven: 7,
+  };
+  // "once/twice a week" already expresses frequency without "times".
+  const onceOrTwice = text.match(/\b(once|twice)\s*(?:a|per|each|every)?\s*week\b/i);
+  if (onceOrTwice) return wordNumbers[onceOrTwice[1]];
+  const number = '(one|two|three|four|five|six|seven|[1-7])';
   const patterns = [
     new RegExp(String.raw`\b${number}\s*(?:times?|days?|sessions?|walks?)\s*(?:a|per|each|every)?\s*week\b`, 'i'),
     new RegExp(String.raw`\b${number}\s*(?:times?|days?|sessions?|walks?)\s*(?:a|per|each|every)\s*week\b`, 'i'),
     new RegExp(String.raw`\b${number}\s*(?:weekly|per week)\b`, 'i'),
+    new RegExp(String.raw`\b${number}\s*(?:times?|days?|sessions?)\s*weekly\b`, 'i'),
   ];
   for (const pattern of patterns) {
     const match = text.match(pattern);
-    if (match) return wordNumbers[match[1]] || Number(match[1]) || null;
+    if (match) return wordNumbers[match[1]] ?? Number(match[1]);
   }
   return null;
+}
+
+const WEEKDAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+function extractScheduleDays(when: string): string[] {
+  const found = [...(when || '').matchAll(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/gi)]
+    .map(match => WEEKDAY_NAMES.find(day => day.toLowerCase() === match[1].toLowerCase())!);
+  return [...new Set(found)];
+}
+
+function validateScheduleDays(raw: string, frequency: number): string[] | null {
+  const days = extractScheduleDays(raw);
+  return days.length === frequency ? days : null;
+}
+
+// Older versions embedded a frequency and a second copy of the schedule in `when`.
+// Remove that generated metadata, while preserving ordinary time-of-day details.
+function scheduleDetailsOnly(previousWhen: string): string {
+  return (previousWhen || '')
+    .replace(/\b(?:[1-7]|one|two|three|four|five|six|seven)\s*(?:sessions?|times?|days?)\s*(?:per|a|each|every)\s*week\b/gi, '')
+    .replace(/\bpreferred\s+schedule\s*:/gi, '')
+    .replace(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/gi, '')
+    .replace(/\b(?:and|on)\b(?=\s*(?:[,;:]|$))/gi, '')
+    .replace(/^[\s,;:]+|[\s,;:]+$/g, '')
+    .replace(/(?:\s*[,;:]\s*){2,}/g, ', ')
+    .replace(/^[\s,;:]+|[\s,;:]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function embeddedScheduleFrequency(when: string): number | null {
+  const match = (when || '').match(/\b([1-7]|one|two|three|four|five|six|seven)\s*(?:sessions?|times?|days?)\s*(?:per|a|each|every)\s*week\b/i);
+  if (!match) return null;
+  const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
+  return words[match[1].toLowerCase()] ?? Number(match[1]);
+}
+
+function updatedScheduleWhen(previousWhen: string, days: string[]): string {
+  const details = scheduleDetailsOnly(previousWhen);
+  // The selected weekdays define the weekly frequency; never copy outdated
+  // "N sessions per week; preferred schedule" text into the saved plan.
+  return `${days.join(', ')}${details ? `, ${details}` : ''}`;
+}
+
+// Match a specifically named saved goal, but never guess from chat history.
+// If two goals could match, the participant must choose explicitly.
+function namedGoalMatches(message: string, goals: { id: string; goal: string }[]): string[] {
+  const ignored = new Set([
+    'goal', 'goals', 'week', 'weekly', 'times', 'time', 'once', 'twice',
+    'three', 'four', 'five', 'six', 'seven', 'minutes', 'minute', 'hours',
+    'hour', 'days', 'daily', 'sessions', 'session', 'want', 'would',
+    'like', 'change', 'update', 'adjust', 'modify', 'increase', 'decrease',
+    'reduce', 'more', 'less', 'per', 'each', 'every', 'from', 'with',
+    'my', 'the', 'and', 'for', 'this', 'that', 'activity', 'plan'
+  ]);
+  const words = (value: string) => (value.toLowerCase().match(/[a-z]+/g) || [])
+    .filter(word => word.length >= 4 && !ignored.has(word));
+  const messageWords = words(message);
+  return goals.filter(goal =>
+    words(goal.goal).some(token => messageWords.some(word =>
+      token === word || (token.length >= 5 && word.length >= 5 && token.slice(0, 4) === word.slice(0, 4))
+    ))
+  ).map(goal => goal.id);
+}
+
+function isGoalChangeRequest(text: string): boolean {
+  const change = /\b(?:update|change|adjust|modify|revise|reduce|decrease|increase|lower|raise|switch|cut|make|set)\b/i.test(text);
+  const mentionsGoal = /\b(?:goal|goals)\b/i.test(text);
+  const mentionsFrequency = /\b(?:once|twice|[1-7]|one|two|three|four|five|six|seven)\s*(?:(?:times?|days?|sessions?)\s*)?(?:a|per|each|every)?\s*week\b/i.test(text);
+  // "Update my action plan" is handled separately.
+  const onlyPlan = /\b(?:action\s+plan|my\s+plan)\b/i.test(text) && !mentionsGoal;
+  return change && (mentionsGoal || mentionsFrequency) && !onlyPlan;
+}
+
+// Research privacy: a participant's chosen display name is not part of coaching.
+// Keep participant IDs and the selected penguin name separate from personal names.
+function participantDisplayNames(profile: unknown): string[] {
+  const data = (profile || {}) as Record<string, unknown>;
+  const fields = ['displayName', 'display_name', 'firstName', 'first_name', 'fullName', 'full_name', 'participantName', 'participant_name', 'preferredName', 'preferred_name', 'name'];
+  return [...new Set(fields.flatMap(key => {
+    const value = data[key];
+    return typeof value === 'string' && value.trim().length > 1 ? [value.trim()] : [];
+  }))];
+}
+
+function escapePrivacyPattern(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function removeParticipantName(text: string, names: string[]): string {
+  let result = text;
+  for (const name of names) {
+    // Only remove a complete matching name, not a fragment inside other words.
+    const escaped = escapePrivacyPattern(name);
+    result = result.replace(new RegExp(`,\\s*${escaped}(?=[!?. ,]|$)`, 'gi'), '');
+    result = result.replace(new RegExp(`\\b${escaped}\\b\\s*,\\s*`, 'gi'), '');
+    result = result.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), '');
+  }
+  return result.replace(/\s+([!?,.])/g, '$1').replace(/ {2,}/g, ' ').trim();
+}
+
+function privateCoachContext<T>(context: T, names: string[]): T {
+  // Clone to avoid changing the participant's actual local profile or saved goals.
+  // Drop identifying profile fields wherever they occur in the model context.
+  const forbidden = new Set(['displayname', 'firstname', 'lastname', 'fullname', 'participantname', 'username', 'preferredname', 'realname']);
+  const clean = (value: any): any => {
+    if (Array.isArray(value)) return value.map(clean);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value)
+        .filter(([key]) => !forbidden.has(key.replace(/[_-]/g, '').toLowerCase()))
+        .map(([key, item]) => [key, clean(item)]));
+    }
+    return typeof value === 'string' ? removeParticipantName(value, names) : value;
+  };
+  const safe = clean(context) as any;
+  if (safe?.profile && typeof safe.profile === 'object') delete safe.profile.name;
+  return safe as T;
 }
 
 const DAY_PATTERNS: Record<number, string[]> = {
@@ -411,6 +535,23 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
   const conversationScroll = useRef<ScrollView>(null);
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const nearBottomRef = useRef(true);
+  // When the AI reply arrives, anchor the viewport at that reply rather than its end.
+  const pendingPipReplyRef = useRef<string | null>(null);
+  const conversationHeightRef = useRef(0);
+  const onPipReplyLayout = (id: string, y: number, height: number) => {
+    if (pendingPipReplyRef.current !== id) return;
+    pendingPipReplyRef.current = null;
+    const longReply = height > conversationHeightRef.current * 0.65;
+    // Don't let content-size changes auto-scroll over the top of a long reply.
+    if (longReply) nearBottomRef.current = false;
+    requestAnimationFrame(() => {
+      if (longReply) {
+        conversationScroll.current?.scrollTo({ y: Math.max(0, y - 12), animated: true });
+      } else {
+        conversationScroll.current?.scrollToEnd({ animated: true });
+      }
+    });
+  };
   const onConversationScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
     const away = contentSize.height - layoutMeasurement.height - contentOffset.y > 160;
@@ -426,6 +567,18 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
   const [planGoalId, setPlanGoalId] = useState('');
   const [planId, setPlanId] = useState('');
   const [actionPlanInvite, setActionPlanInvite] = useState<{ goalId: string; goal: string } | null>(null);
+  const [pendingGoalSelection, setPendingGoalSelection] = useState<{
+    request: string; conversationId: string; kind: 'goal' | 'plan';
+  } | null>(null);
+  // Review a linked plan's schedule after a confirmed change in weekly goal frequency.
+  // Nothing in the plan is changed until the participant explicitly saves a new schedule.
+  const [scheduleReview, setScheduleReview] = useState<{
+    goalId: string; planId: string; frequency: number; previousWhen: string;
+    previousGoal: string; nextGoal: string;
+    step: 'offer' | 'days' | 'confirm'; selectedDays: string[];
+  } | null>(null);
+  const [customScheduleDays, setCustomScheduleDays] = useState('');
+
 
   const active = state.conversations.find(c => c.id === state.activeConversationId)!;
   const lastAssistantId = [...active.messages].reverse().find(m => m.role === 'assistant')?.id;
@@ -509,22 +662,25 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
   // The guide remains the authority for progression and saving; AI choices are only suggestions.
   async function fetchGuideOptions(goalId: string, stage: string, draft: Record<string, string> = {}) {
     const selected = state.goals.find(g => g.id === goalId && g.confirmed);
-    if (!selected || !COACH_URL) return;
+    if (!selected || (!COACH_URL && !GEMINI_COACH_URL)) return;
     const requestNumber = ++guideOptionsRequest.current;
     setGuideAiChoices([]);
     setGuideChoicesBusy(true);
     try {
-      const response = await request<{ quick_reply_options?: string[] }>(COACH_URL, {
+      const guideSuggestionsUrl = GEMINI_COACH_URL
+        ? GEMINI_COACH_URL.replace(/\/message\/?$/, '/guide-suggestions')
+        : COACH_URL;
+      const response = await request<{ quick_reply_options?: string[] }>(guideSuggestionsUrl, {
         method: 'POST',
         body: JSON.stringify({
           action: 'guideSuggestions', sessionId: `guide_suggestions_${participantId}`,
           chatInput: 'Generate contextual guide choices',
-          app_context: coachContext(state, participantId, 'Compassion Hub'),
+          app_context: privateCoachContext(coachContext(state, participantId, 'Compassion Hub'), participantDisplayNames(state.profile)),
           guide_suggestion: { goal: selected.goal, stage, draft },
         }),
       });
       const options = Array.isArray(response.quick_reply_options) ? response.quick_reply_options : [];
-      if (requestNumber === guideOptionsRequest.current) setGuideAiChoices(options.filter(x => typeof x === 'string' && x.trim().length > 0).slice(0, 3));
+      if (requestNumber === guideOptionsRequest.current) setGuideAiChoices(options.filter(x => typeof x === 'string' && x.trim().length > 0).slice(0, 3).map(option => removeParticipantName(option, participantDisplayNames(state.profile))));
     } catch {
       // Never block the participant from typing their own answer if the AI is unavailable.
       if (requestNumber === guideOptionsRequest.current) setGuideAiChoices([]);
@@ -648,8 +804,22 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
   }
 
   // Suggestions come from n8n, not a fixed list. The participant can always type an alternative.
+  // Weekday options are essential for action planning, not an optional AI extra.
+  // Use Gemini's choices only when each one matches the goal's stated frequency;
+  // otherwise provide frequency-matched defaults. "Choose my own days" is always available.
+  const selectedGuideGoal = state.goals.find(g => g.id === chatGuideGoalId && g.confirmed);
+  const guideDaysFrequency = selectedGuideGoal ? goalDaysPerWeek(selectedGuideGoal.goal) : null;
+  const isDaySelectionStep = !!chatGuide && !chatGuide.completed && chatGuide.step === 1 && chatGuideChoosingDays;
+  const frequencyMatchedDayChoices = isDaySelectionStep && guideDaysFrequency
+    ? guideAiChoices.filter(option => extractScheduleDays(option).length === guideDaysFrequency)
+    : guideAiChoices;
+  const daySuggestions = isDaySelectionStep && guideDaysFrequency
+    ? frequencyMatchedDayChoices.length >= 2
+      ? frequencyMatchedDayChoices
+      : DAY_PATTERNS[guideDaysFrequency] || []
+    : guideAiChoices;
   const guideChoices = chatGuide && !chatGuide.completed ? [
-    ...guideAiChoices,
+    ...daySuggestions,
     ...(chatGuide.step === 1 && chatGuideChoosingDays ? ['Choose my own days'] : []),
     ...(chatGuide.step === 3 && chatGuideChoosingDuration ? ['Choose my own duration'] : []),
     // Restore the in-app reminder preference for future notification support.
@@ -657,8 +827,45 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     ...(chatGuide.step === 6 && !guideAiChoices.some(option => /^in[ -]app$/i.test(option.trim())) ? ['In app'] : []),
   ] : [];
 
-  async function send(text: string, retryId?: string, planHelp?: { goalId: string; goal: string }) {
+  async function send(text: string, retryId?: string, planHelp?: { goalId: string; goal: string }, selectedGoalId?: string) {
     if (!text.trim() || busy || preview) return;
+    if (scheduleReview) { setError('Please complete or skip the action-plan schedule review first.'); return; }
+    const savedGoals = state.goals.filter(g => g.confirmed && !g.completed);
+    if (pendingGoalSelection && !selectedGoalId) {
+      setError('Please select which saved goal you want to update using the choices below.');
+      return;
+    }
+    // Resolve both goal changes and explicit plan changes before calling Gemini.
+    // For indirect plan suggestions (e.g. 'Try shorter sessions'), inspect the
+    // structured proposal below, as the text itself need not say 'action plan'.
+    const explicitPlanChange = /\b(?:update|change|adjust|modify|revise|reduce|shorten|shorter|extend|increase|decrease)\b/i.test(text)
+      && /\b(?:action plan|plan|schedule|sessions?|duration|workouts?)\b/i.test(text);
+    if (!retryId && !selectedGoalId && !planHelp && !chatGuide && !monitorFlow &&
+        savedGoals.length > 1 && (isGoalChangeRequest(text) || explicitPlanChange)) {
+      const matches = namedGoalMatches(text, savedGoals);
+      if (matches.length !== 1) {
+        // Ask before calling Gemini. No goal or linked plan is changed here.
+        const conversationId = active.id;
+        update(st => ({ ...st, conversations: st.conversations.map(c =>
+          c.id === conversationId ? {
+            ...c,
+            quickReplies: [],
+            messages: [
+              ...c.messages,
+              { id: uuid(), role: 'user', text: text.trim(), createdAt: new Date().toISOString() },
+              { id: uuid(), role: 'assistant', text: isGoalChangeRequest(text) ? 'Which active goal would you like to update?' : 'Which active goal has the action plan you would like to update?', createdAt: new Date().toISOString() },
+            ],
+          } : c
+        ) }));
+        setPendingGoalSelection({ request: text.trim(), conversationId,
+          kind: isGoalChangeRequest(text) ? 'goal' : 'plan' });
+        setError('');
+        setInput('');
+        return;
+      }
+      selectedGoalId = matches[0];
+    }
+
     if (!monitorFlow && /\b(?:create|make|set up|start|build)\b/i.test(text) && /self[- ]monitoring plan/i.test(text)) {
       appendGuideMessage('user', text);
       startMonitoring(state.coachRequest?.goalId);
@@ -687,7 +894,21 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     const conversationId = active.id;
     const messageId = retryId || uuid();
     const requestId = state.coachRequest?.id;
-    const context = coachContext(state, participantId, state.coachRequest?.source || 'Compassion Hub');
+    const privateNames = participantDisplayNames(state.profile);
+    const context = privateCoachContext(
+      coachContext(state, participantId, state.coachRequest?.source || 'Compassion Hub'),
+      privateNames
+    );
+    // Guidance is also included in requests. Add the matching system-level rule
+    // to Gemini's coaching-system.txt for reliable generation without names.
+    Object.assign(context, { coaching_privacy_instruction: 'Never address the participant by their name or include their personal name in the response. Use neutral second-person language.' });
+    if (selectedGoalId) {
+      const chosen = savedGoals.find(g => g.id === selectedGoalId);
+      if (chosen) {
+        context.goals = [chosen, ...context.goals.filter(g => g.id !== chosen.id)].slice(0, 10);
+        context.confirmed_goal = chosen;
+      }
+    }
     // The selected goal is sent as structured context, NOT exposed in the chat bubble.
     if (planHelp) {
       context.requested_help = {
@@ -716,24 +937,84 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
 
     try {
       const result = await sendCoach(active.sessionId, text.trim(), context);
+      const assistantMessageId = uuid();
+      pendingPipReplyRef.current = assistantMessageId;
+      // Prevent the old bottom-follow behaviour while the reply is being laid out.
+      nearBottomRef.current = false;
+      // When Gemini proposes an action plan, the participant has not completed
+      // the activity yet. The next interaction is review/confirmation, not a
+      // retrospective check-in about an untried cue or activity.
+      const proposesPlan = !!result.plan_suggestion &&
+        ['create', 'update'].includes(result.plan_suggestion.operation) &&
+        typeof result.plan_suggestion.what === 'string' && !!result.plan_suggestion.what.trim();
+      const prematureReflection = /\b(?:how did|how was|did (?:it|that) help|what happened when|how (?:have|has) .* (?:worked|felt))\b/i.test(result.chat_response || '');
+      const proposedPlanUpdate = proposesPlan && result.plan_suggestion?.operation === 'update';
+      const proposedGoalUpdate = result.goal_suggestion?.operation === 'update';
+      const namedMatches = namedGoalMatches(text, savedGoals);
+      // Gemini cannot select a goal by itself. Only the current user's clear
+      // activity reference or an explicit in-app goal selection can do so.
+      const goalSelectionRequired = !selectedGoalId && savedGoals.length > 1 &&
+        (proposedPlanUpdate || proposedGoalUpdate) && namedMatches.length !== 1;
+      const selectedActiveGoalId = selectedGoalId || (namedMatches.length === 1 ? namedMatches[0] : undefined);
+      const targetGoal = savedGoals.find(g => g.id === selectedActiveGoalId);
+      const candidatePlans = targetGoal ? state.plans.filter(p => p.goalId === targetGoal.id) : [];
+      const planWithoutSingleMatch = proposedPlanUpdate && !goalSelectionRequired && candidatePlans.length !== 1;
+      if (goalSelectionRequired) {
+        // Do not display Gemini's unconfirmed activity assumption or its proposal.
+        setPendingGoalSelection({ request: text.trim(), conversationId,
+          kind: proposedPlanUpdate ? 'plan' : 'goal' });
+      }
+
+      const responseText = goalSelectionRequired
+        ? 'Which active goal would you like to update? Please choose from your unfinished goals below.'
+        : planWithoutSingleMatch
+          ? 'I could not identify one existing action plan for that goal. Please review the goal in Goals before updating its plan.'
+          : proposesPlan && prematureReflection
+            ? 'Your action plan is ready for you to review. You can save it below or change a detail before getting started.'
+            : removeParticipantName(result.chat_response, privateNames);
+      // A plan proposal uses its own confirmation card. Do not attach unrelated
+      // AI quick replies that will survive into the next saved-status message.
+      const responseOptions = (proposesPlan || goalSelectionRequired || planWithoutSingleMatch)
+        ? [] : (result.quick_reply_options || []).map(option => removeParticipantName(option, privateNames));
       update(st => ({
         ...st,
         coachRequest: st.coachRequest?.id === requestId ? undefined : st.coachRequest,
         conversations: st.conversations.map(c => c.id === conversationId ? {
           ...c,
-          quickReplies: result.quick_reply_options || [],
+          quickReplies: responseOptions,
           messages: [
             ...c.messages.map(m => m.id === messageId ? { ...m, failed: false } : m),
-            { id: uuid(), role: 'assistant', text: result.chat_response, createdAt: new Date().toISOString() },
+            { id: assistantMessageId, role: 'assistant', text: responseText, createdAt: new Date().toISOString() },
           ],
         } : c),
       }));
       setResource(result.workshop_resource && GUIDE_DEFINITIONS.some(g => g.id === result.workshop_resource) ? result.workshop_resource as GuideId : null);
-      if (result.goal_suggestion && (result.goal_suggestion.operation === 'create' || result.goal_suggestion.operation === 'update') && typeof result.goal_suggestion.goal === 'string' && result.goal_suggestion.goal.trim()) {
-        openProposal(result.goal_suggestion);
+      if (!goalSelectionRequired && result.goal_suggestion &&
+          (result.goal_suggestion.operation === 'create' || result.goal_suggestion.operation === 'update') &&
+          typeof result.goal_suggestion.goal === 'string' && result.goal_suggestion.goal.trim()) {
+        // For updates, never use a guessed or completed goal ID from Gemini.
+        if (result.goal_suggestion.operation === 'create' || targetGoal) {
+          openProposal(result.goal_suggestion.operation === 'update' && targetGoal
+            ? { ...result.goal_suggestion, goal_id: targetGoal.id }
+            : result.goal_suggestion);
+        }
       }
-      if (result.plan_suggestion && ['create', 'update'].includes(result.plan_suggestion.operation) && typeof result.plan_suggestion.what === 'string' && result.plan_suggestion.what.trim()) {
-        openPlanProposal(result.plan_suggestion);
+      if (!goalSelectionRequired && !planWithoutSingleMatch && proposesPlan && result.plan_suggestion) {
+        if (result.plan_suggestion.operation === 'update') {
+          const existingPlan = candidatePlans[0];
+          if (targetGoal && existingPlan) {
+            // Gemini may suggest another goal's fields; never transfer its
+            // activity or stored plan ID to a different selected goal.
+            openPlanProposal({ ...result.plan_suggestion, operation: 'update',
+              goal_id: targetGoal.id, plan_id: existingPlan.id,
+              what: existingPlan.what,
+              when: existingPlan.when, where: existingPlan.where,
+              barrier: existingPlan.barrier, alternative: existingPlan.alternative,
+              cue: existingPlan.cue });
+          }
+        } else {
+          openPlanProposal(result.plan_suggestion);
+        }
       }
       const reaction = (result as typeof result & { reaction_emoji?: string }).reaction_emoji;
       if (typeof reaction === 'string' && ['💛', '🫶', '💙', '🌱'].includes(reaction)) {
@@ -760,98 +1041,117 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
   function openProposal(next: GoalSuggestion) {
     setProposal(next);
     setDraftGoal(next.goal.slice(0, 500));
-    setTargetGoalId(next.goal_id && state.goals.some(g => g.id === next.goal_id && g.confirmed) ? next.goal_id : '');
+    setTargetGoalId(next.goal_id && state.goals.some(g => g.id === next.goal_id && g.confirmed && !g.completed) ? next.goal_id : '');
   }
 
-  // Align a linked action plan with an explicitly confirmed weekly-frequency change.
-  // Preserve existing preferences, duration and barrier strategies. For a reduction,
-  // keep the first N chosen days rather than inventing different days.
-  function syncPlanFrequency(when: string, previousGoal: string, nextGoal: string): string | null {
-    const frequency = (goal: string): number | null => {
-      const match = goal.match(/\b(\d+|one|two|three|four|five|six|seven)\s*(?:times?|days?|sessions?|walks?)\s*(?:a|per|each)\s*week\b/i);
-      const words: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7 };
-      if (!match) return null;
-      const value = words[match[1].toLowerCase()] ?? Number(match[1]);
-      return Number.isInteger(value) && value >= 1 && value <= 7 ? value : null;
-    };
-    const before = frequency(previousGoal);
-    const after = frequency(nextGoal);
-    if (!before || !after || before === after) return null;
-    const weekdays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-    const found = [...when.matchAll(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/gi)].map(m => weekdays.find(d => d.toLowerCase() === m[1].toLowerCase())!);
-    const distinct = [...new Set(found)];
-    if (after < before && distinct.length >= after) {
-      const kept = distinct.slice(0, after);
-      // Keep the original time-of-day and other free-text context after the day list.
-      const remainder = when.replace(/\b(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\b/gi, '').replace(/[,\s]+/g, ' ').replace(/^(?:and\s*)+/i, '').trim();
-      return `${kept.join(', ')}${remainder ? `, ${remainder}` : ''}`;
+  function chooseScheduleDays(raw: string) {
+    if (!scheduleReview) return;
+    const selectedDays = validateScheduleDays(raw, scheduleReview.frequency);
+    if (!selectedDays) {
+      setError(`Choose exactly ${scheduleReview.frequency} different weekdays (e.g. Monday, Tuesday).`);
+      return;
     }
-    // If the saved days cannot safely be reduced, or the frequency increases,
-    // retain the participant's day preferences and record the frequency explicitly.
-    return `${after} ${after === 1 ? 'session' : 'sessions'} per week${when ? `; preferred schedule: ${when}` : ''}`;
+    setError('');
+    setScheduleReview({ ...scheduleReview, selectedDays, step: 'confirm' });
+  }
+
+  function saveScheduleReview() {
+    if (!scheduleReview || scheduleReview.step !== 'confirm') return;
+    const { planId, goalId, frequency, selectedDays, previousGoal, nextGoal } = scheduleReview;
+    if (selectedDays.length !== frequency) return;
+    const plan = state.plans.find(p => p.id === planId && p.goalId === goalId);
+    if (!plan) { setError('The linked action plan is no longer available.'); return; }
+    const nextWhen = updatedScheduleWhen(plan.when, selectedDays);
+    const nextWhat = plan.what === previousGoal ? nextGoal : plan.what;
+    if (nextWhen !== plan.when || nextWhat !== plan.what) {
+      update(st => ({ ...st, plans: st.plans.map(p => {
+        if (p.id !== planId || p.goalId !== goalId) return p;
+        return {
+          ...p, when: nextWhen, what: nextWhat,
+          revisions: [...(p.revisions || []), {
+            previous: JSON.stringify({ what: p.what, when: p.when, where: p.where, how: p.how, barrier: p.barrier, alternative: p.alternative, cue: p.cue }),
+            next: JSON.stringify({ what: nextWhat, when: nextWhen, where: p.where, how: p.how, barrier: p.barrier, alternative: p.alternative, cue: p.cue }),
+            changedAt: new Date().toISOString(), source: 'coach' as const,
+          }],
+        };
+      }) }));
+      track('plan_updated_from_chat', { source: 'confirmed_schedule_review', goalId });
+    }
+    setScheduleReview(null);
+    setCustomScheduleDays('');
+    appendGuideMessage('assistant', nextWhen !== plan.when || nextWhat !== plan.what
+      ? 'Your action-plan days are updated in Goals. Your time, location, duration and other plan details are unchanged.'
+      : 'Your action-plan schedule is already set to those days.');
   }
 
   function confirmProposal() {
     const text = draftGoal.trim();
     if (!proposal || !text || text.length > 500) return;
-    if (proposal.operation === 'update' && !state.goals.some(g => g.id === targetGoalId && g.confirmed)) {
+    if (proposal.operation === 'update' && !state.goals.some(g => g.id === targetGoalId && g.confirmed && !g.completed)) {
       setError('Please select the goal you want to update.');
       return;
     }
+    const previousGoal = state.goals.find(g => g.id === targetGoalId && g.confirmed);
+    const oldFrequency = previousGoal ? goalDaysPerWeek(previousGoal.goal) : null;
+    const newFrequency = goalDaysPerWeek(text);
+    // Also catch a schedule left out of sync by an earlier goal update.
+    // This lets a participant review the schedule without toggling the goal again.
+    const existingPlan = previousGoal ? state.plans.find(plan => plan.goalId === previousGoal.id) : undefined;
+    const planDays = existingPlan ? extractScheduleDays(existingPlan.when) : [];
+    const needsScheduleReview = !!newFrequency && !!existingPlan && (
+      (oldFrequency !== null && oldFrequency !== newFrequency) ||
+      (planDays.length > 0 && planDays.length !== newFrequency) ||
+      (embeddedScheduleFrequency(existingPlan.when) !== null && embeddedScheduleFrequency(existingPlan.when) !== newFrequency)
+    );
+    const linkedPlan = needsScheduleReview ? existingPlan : undefined;
     const now = new Date().toISOString();
     const id = uuid();
     update(st => {
       if (proposal.operation === 'create') {
         return { ...st, goals: [{ id, goal: text, weekStart: monday(), completed: false, confirmed: true, createdAt: now, revisions: [] }, ...st.goals] };
       }
-      const previousGoal = st.goals.find(g => g.id === targetGoalId);
-      if (!previousGoal) return st;
       return {
         ...st,
         goals: st.goals.map(g => g.id === targetGoalId ? {
           ...g, goal: text, revisions: [...(g.revisions || []), { previous: g.goal, next: text, changedAt: now, source: 'coach' as const }],
         } : g),
-        plans: st.plans.map(plan => {
-          if (plan.goalId !== targetGoalId) return plan;
-          const revisedWhen = syncPlanFrequency(plan.when, previousGoal.goal, text);
-          if (!revisedWhen || revisedWhen === plan.when) return plan;
-          const revisedWhat = plan.what === previousGoal.goal ? text : plan.what;
-          return {
-            ...plan,
-            what: revisedWhat,
-            when: revisedWhen,
-            revisions: [...(plan.revisions || []), {
-              previous: JSON.stringify({ what: plan.what, when: plan.when, where: plan.where, how: plan.how, barrier: plan.barrier, alternative: plan.alternative, cue: plan.cue }),
-              next: JSON.stringify({ what: revisedWhat, when: revisedWhen, where: plan.where, how: plan.how, barrier: plan.barrier, alternative: plan.alternative, cue: plan.cue }),
-              changedAt: new Date(Date.parse(now) + 1).toISOString(), source: 'coach' as const,
-            }],
-          };
-        }),
+        // Do not silently modify the linked action plan or invent extra days.
       };
     });
     track(proposal.operation === 'create' ? 'goal_created_from_chat' : 'goal_updated_from_chat', { source: 'confirmed_coach_proposal' });
     const savedOperation = proposal.operation;
     setProposal(null);
     setError('');
-    // Offer a natural next step without initiating another AI request or saving a plan.
     if (savedOperation === 'create') setActionPlanInvite({ goalId: id, goal: text });
-    update(st => ({ ...st, conversations: st.conversations.map(c => c.id === active.id ? { ...c, quickReplies: [], messages: [...c.messages, { id: uuid(), role: 'assistant' as const, text: savedOperation === 'create' ? 'Your goal is saved in Goals! Would you like to make a flexible action plan for it? I can suggest some starting ideas based on your goal.' : 'Your goal and its linked action plan are updated in Goals. Both changes are recorded in the timeline.', createdAt: new Date().toISOString() }] } : c) }));
+    if (linkedPlan && newFrequency && previousGoal) {
+      setScheduleReview({ goalId: previousGoal.id, planId: linkedPlan.id, frequency: newFrequency,
+        previousWhen: linkedPlan.when, previousGoal: previousGoal.goal, nextGoal: text, step: 'offer', selectedDays: [] });
+      setCustomScheduleDays('');
+    }
+    const message = savedOperation === 'create'
+      ? 'Your goal is saved in Goals! Would you like to make a flexible action plan for it? I can suggest some starting ideas based on your goal.'
+      : linkedPlan && newFrequency
+      ? `Your goal is updated to ${newFrequency} times a week. Would you like to review the days in your linked action plan so the schedule matches?`
+      : 'Your goal is updated in Goals. No action-plan changes have been saved.';
+    appendGuideMessage('assistant', message);
   }
 
   function openPlanProposal(next: PlanSuggestion) {
     const fields = ['what', 'when', 'where', 'how', 'barrier', 'alternative', 'cue'] as const;
     const safe: typeof planDraft = { what: '', when: '', where: '', how: '', barrier: '', alternative: '', cue: '' };
     for (const field of fields) safe[field] = typeof next[field] === 'string' ? next[field]!.slice(0, 500) : '';
-    const existing = next.plan_id ? state.plans.find(p => p.id === next.plan_id) : undefined;
+    const activeGoal = state.goals.find(g => g.id === next.goal_id && g.confirmed && !g.completed);
+    const existing = next.operation === 'update' && activeGoal && next.plan_id
+      ? state.plans.find(p => p.id === next.plan_id && p.goalId === activeGoal.id) : undefined;
     if (existing) for (const field of fields) if (!safe[field]) safe[field] = existing[field];
     setPlanProposal(next);
     setPlanDraft(safe);
     setPlanId(existing?.id || '');
-    setPlanGoalId(existing?.goalId || (next.goal_id && state.goals.some(g => g.id === next.goal_id) ? next.goal_id : state.goals.find(g => g.confirmed && !g.completed)?.id || ''));
+    setPlanGoalId(existing?.goalId || activeGoal?.id || '');
   }
 
   function confirmPlanProposal() {
-    if (!planProposal || !planGoalId || !state.goals.some(g => g.id === planGoalId && g.confirmed)) {
+    if (!planProposal || !planGoalId || !state.goals.some(g => g.id === planGoalId && g.confirmed && !g.completed)) {
       setError('Select a saved goal for this action plan.'); return;
     }
     if (planProposal.operation === 'update' && !state.plans.some(p => p.id === planId && p.goalId === planGoalId)) {
@@ -874,11 +1174,21 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     track(planProposal.operation === 'create' ? 'plan_created_from_chat' : 'plan_updated_from_chat', { source: 'confirmed_coach_proposal' });
     setPlanProposal(null);
     setError('');
-    update(st => ({ ...st, conversations: st.conversations.map(c => c.id === active.id ? { ...c, messages: [...c.messages, { id: uuid(), role: 'assistant' as const, text: planProposal.operation === 'create' ? 'Your action plan is saved under its goal. You can change it with me anytime.' : 'Your action plan has been updated, and the change is in your goal timeline.', createdAt: new Date().toISOString() }] } : c) }));
+    // End the proposal flow; never carry Gemini's prior quick replies onto
+    // the confirmation message after the plan has been saved.
+    update(st => ({ ...st, conversations: st.conversations.map(c => c.id === active.id ? {
+      ...c, quickReplies: [],
+      messages: [...c.messages, { id: uuid(), role: 'assistant' as const,
+        text: planProposal.operation === 'create'
+          ? 'Your action plan is saved under its goal. You can try it at your next planned session and check in afterward if you wish.'
+          : 'Your action plan has been updated, and the change is in your goal timeline.',
+        createdAt: new Date().toISOString() }],
+    } : c) }));
   }
 
   function newChat() {
     if (busy) return;
+    pendingPipReplyRef.current = null;
     const c = newConversation(uuid());
     update(st => ({ ...st, coachRequest: undefined, conversations: [...st.conversations, c], activeConversationId: c.id }));
     setResource(null);
@@ -889,12 +1199,16 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     setProposal(null);
     setPlanProposal(null);
     setActionPlanInvite(null);
+    setPendingGoalSelection(null);
+    setScheduleReview(null);
+    setCustomScheduleDays('');
     setChatGuide(null);
     setChatGuideGoalId('');
   }
 
   function openChat(id: string) {
     if (busy) return;
+    pendingPipReplyRef.current = null;
     update(st => ({ ...st, coachRequest: undefined, activeConversationId: id }));
     setResource(null);
     setError('');
@@ -904,6 +1218,9 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
     setProposal(null);
     setPlanProposal(null);
     setActionPlanInvite(null);
+    setPendingGoalSelection(null);
+    setScheduleReview(null);
+    setCustomScheduleDays('');
     setChatGuide(null);
     setChatGuideGoalId('');
   }
@@ -991,7 +1308,7 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
             </Pressable>
           </View>
           <View style={{ flex: 1 }}>
-          <ScrollView ref={conversationScroll} onScroll={onConversationScroll} scrollEventThrottle={80} onContentSizeChange={() => { if (nearBottomRef.current) conversationScroll.current?.scrollToEnd({ animated: false }); }} style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
+          <ScrollView ref={conversationScroll} onScroll={onConversationScroll} onLayout={e => { conversationHeightRef.current = e.nativeEvent.layout.height; }} scrollEventThrottle={80} onContentSizeChange={() => { if (!pendingPipReplyRef.current && nearBottomRef.current) conversationScroll.current?.scrollToEnd({ animated: false }); }} style={{ flex: 1 }} keyboardShouldPersistTaps="handled" contentContainerStyle={s.content}>
 
             <Button secondary onPress={() => setShowReflections(!showReflections)}>{showReflections ? 'Close reflections' : 'Write or revisit a reflection'}</Button>
             {showReflections && <ReflectionPanel onCoach={request => {
@@ -1010,7 +1327,7 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
 
             {!active.messages.length && <Card><Text style={s.body}>{preview ? 'This preview has no live AI connection. You can explore the guides and save a plan on this device.' : 'What would you like support with today? You can ask about a guide, your plan, or something that has been difficult.'}</Text></Card>}
 
-            {active.messages.map(m => <View key={m.id} style={[s.message, m.role === 'user' && s.userMessage, m.role === 'user' && !!messageReactions[m.id] && { marginTop: 14, overflow: 'visible' }]}>
+            {active.messages.map(m => <View key={m.id} onLayout={e => { if (m.role === 'assistant') onPipReplyLayout(m.id, e.nativeEvent.layout.y, e.nativeEvent.layout.height); }} style={[s.message, m.role === 'user' && s.userMessage, m.role === 'user' && !!messageReactions[m.id] && { marginTop: 14, overflow: 'visible' }]}>
               {m.role === 'user' && !!messageReactions[m.id] && (
                 <View
                   accessible
@@ -1034,9 +1351,9 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
                 </View>
               )}
               <Text style={s.small}>{m.role === 'user' ? 'You' : state.profile.penguinName}</Text>
-              <Text selectable style={s.body}>{m.text}</Text>
+              <Text selectable style={s.body}>{m.role === 'assistant' ? removeParticipantName(m.text, participantDisplayNames(state.profile)) : m.text}</Text>
               {m.role === 'assistant' && (
-                <Pressable accessibilityRole="button" accessibilityLabel={speakingMessageId === m.id ? 'Stop reading message aloud' : 'Read message aloud'} onPress={() => toggleReadAloud(m.id, m.text)} style={{ alignSelf: 'flex-end', paddingVertical: 6, paddingHorizontal: 8, marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                <Pressable accessibilityRole="button" accessibilityLabel={speakingMessageId === m.id ? 'Stop reading message aloud' : 'Read message aloud'} onPress={() => toggleReadAloud(m.id, removeParticipantName(m.text, participantDisplayNames(state.profile)))} style={{ alignSelf: 'flex-end', paddingVertical: 6, paddingHorizontal: 8, marginTop: 4, flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                   <Ionicons name={speakingMessageId === m.id ? 'stop-circle-outline' : 'volume-high-outline'} size={21} color={color.blue} />
                   <Text style={[s.small, { color: color.blue }]}>{speakingMessageId === m.id ? 'Stop' : 'Listen'}</Text>
                 </Pressable>
@@ -1116,6 +1433,24 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
 
             {/* Muse-style in-chat decisions: one tap is explicit permission to save.
                 No separate full-screen editor or second confirmation step. */}
+            {pendingGoalSelection && pendingGoalSelection.conversationId === active.id && (
+              <View style={{ backgroundColor: '#F3F6F8', borderRadius: 20, padding: 18, gap: 10, borderWidth: 1, borderColor: color.line }}>
+                <Text style={s.eyebrow}>Choose an active goal</Text>
+                <Text style={s.body}>Which active, unfinished goal would you like to {pendingGoalSelection.kind === 'plan' ? 'adjust the action plan for' : 'update'}?</Text>
+                <ChoiceRows
+                  options={state.goals.filter(g => g.confirmed && !g.completed && (pendingGoalSelection.kind === 'goal' || state.plans.some(p => p.goalId === g.id))).map(g => g.goal)}
+                  onChoose={label => {
+                    const chosen = state.goals.find(g => g.confirmed && !g.completed && (pendingGoalSelection.kind === 'goal' || state.plans.some(p => p.goalId === g.id)) && g.goal === label);
+                    if (!chosen || !pendingGoalSelection) return;
+                    const originalRequest = pendingGoalSelection.request;
+                    setPendingGoalSelection(null);
+                    appendGuideMessage('user', `I mean my goal: ${chosen.goal}`);
+                    void send(`${originalRequest} Apply this only to my selected active goal: "${chosen.goal}". Do not modify any other goal or action plan.`, undefined, undefined, chosen.id);
+                  }}
+                />
+              </View>
+            )}
+
             {proposal && <View style={{ backgroundColor: '#F3F6F8', borderRadius: 20, padding: 18, gap: 10, borderWidth: 1, borderColor: color.line }}>
               <Text style={s.eyebrow}>{proposal.operation === 'update' ? 'Proposed goal change' : 'Your new goal'}</Text>
               {proposal.operation === 'update' && <Text style={s.small}>Current: {state.goals.find(g => g.id === targetGoalId)?.goal || 'Select the goal you mean below'}</Text>}
@@ -1127,6 +1462,39 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
               </View>}
               <Button disabled={busy || !draftGoal.trim() || (proposal.operation === 'update' && !targetGoalId)} onPress={confirmProposal}>{proposal.operation === 'create' ? 'Yes, save my goal' : 'Yes, update my goal'}</Button>
               <Button secondary disabled={busy} onPress={() => { setProposal(null); setInput('I would like to adjust the wording before saving. ' + draftGoal); }}>Change something</Button>
+            </View>}
+            {scheduleReview && !proposal && <View style={{ backgroundColor: '#F3F6F8', borderRadius: 20, padding: 18, gap: 10, borderWidth: 1, borderColor: color.line }}>
+              <Text style={s.eyebrow}>Review your action-plan schedule</Text>
+              <Text style={s.body}>Your goal is now {scheduleReview.frequency} times a week.</Text>
+              <Text style={s.small}>Current schedule: {scheduleReview.previousWhen || 'Not specified'}</Text>
+              {scheduleReview.step === 'offer' && <>
+                <Text style={s.body}>Would you like to choose {scheduleReview.frequency} days for the linked action plan?</Text>
+                <Button onPress={() => setScheduleReview(prev => prev && { ...prev, step: 'days' })}>Yes, choose my days</Button>
+                <Button secondary onPress={() => { setScheduleReview(null); setCustomScheduleDays(''); appendGuideMessage('assistant', 'No problem. Your updated goal is saved; your action-plan schedule is unchanged for now.'); }}>Keep my current schedule for now</Button>
+              </>}
+              {scheduleReview.step === 'days' && <>
+                <Text style={s.body}>Which {scheduleReview.frequency} days would work best?</Text>
+                {(() => {
+                  const existing = extractScheduleDays(scheduleReview.previousWhen);
+                  const extra = WEEKDAY_NAMES.find(day => !existing.includes(day));
+                  const retained = existing.length < scheduleReview.frequency && extra
+                    ? [...existing, ...WEEKDAY_NAMES.filter(day => !existing.includes(day)).slice(0, scheduleReview.frequency - existing.length)]
+                    : existing.slice(0, scheduleReview.frequency);
+                  const suggestions = [retained.join(', '), ...(DAY_PATTERNS[scheduleReview.frequency] || [])]
+                    .filter((value, index, arr) => value && arr.indexOf(value) === index && !!validateScheduleDays(value, scheduleReview.frequency));
+                  return suggestions.slice(0, 3).map(option => <Button key={option} secondary onPress={() => chooseScheduleDays(option)}>{option}</Button>);
+                })()}
+                <Field label="Or choose your own days" value={customScheduleDays} onChangeText={setCustomScheduleDays} placeholder="e.g. Monday, Tuesday, Thursday, Saturday" />
+                <Button secondary onPress={() => chooseScheduleDays(customScheduleDays)}>Review my selected days</Button>
+                <Button secondary onPress={() => setScheduleReview(prev => prev && { ...prev, step: 'offer' })}>Back</Button>
+              </>}
+              {scheduleReview.step === 'confirm' && <>
+                <Text style={s.body}>New schedule ({scheduleReview.frequency} sessions per week): {updatedScheduleWhen(scheduleReview.previousWhen, scheduleReview.selectedDays)}</Text>
+                <Text style={s.small}>Your other action-plan details will stay the same.</Text>
+                <Button onPress={saveScheduleReview}>Yes, update my action plan</Button>
+                <Button secondary onPress={() => setScheduleReview(prev => prev && { ...prev, step: 'days' })}>Choose different days</Button>
+                <Button secondary onPress={() => { setScheduleReview(null); setCustomScheduleDays(''); }}>Keep existing plan instead</Button>
+              </>}
             </View>}
             {actionPlanInvite && !planProposal && <View style={{ backgroundColor: '#F3F6F8', borderRadius: 20, padding: 18, gap: 10, borderWidth: 1, borderColor: color.line }}>
               <Text style={s.eyebrow}>Next step · Action planning</Text>
@@ -1176,12 +1544,12 @@ export function Coach({ participantId, preview, onGuide }: { participantId: stri
           </View>
 
           <View style={{ padding: 16, backgroundColor: color.white, gap: 10, borderTopWidth: 1, borderTopColor: color.line }}>
-            <Field label={`Message ${state.profile.penguinName}`} value={input} onChangeText={setInput} multiline editable={!busy && !preview && !checkIn && monitorFlow?.step !== 'confirm' && monitorFlow?.step !== 'choose_goal'} maxLength={3000} placeholder={preview ? 'Live coaching is unavailable in preview' : chatGuideChoosingDuration ? 'e.g. 15 minutes' : enterOwnDays ? 'e.g. Monday, Thursday, Friday' : 'Message your penguin or type another idea…'} />
+            <Field label={`Message ${state.profile.penguinName}`} value={input} onChangeText={setInput} multiline editable={!busy && !preview && !checkIn && !scheduleReview && monitorFlow?.step !== 'confirm' && monitorFlow?.step !== 'choose_goal'} maxLength={3000} placeholder={preview ? 'Live coaching is unavailable in preview' : chatGuideChoosingDuration ? 'e.g. 15 minutes' : enterOwnDays ? 'e.g. Monday, Thursday, Friday' : 'Message your penguin or type another idea…'} />
             <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
               <Pressable accessibilityRole="button" accessibilityLabel={listening ? 'Stop dictation' : 'Dictate message'} onPress={toggleDictation} disabled={busy || preview} style={{ padding: 12, borderRadius: 24, borderWidth: 1, borderColor: listening ? color.blue : color.line, backgroundColor: color.white }}>
                 <Ionicons name={listening ? 'stop-circle-outline' : 'mic-outline'} size={25} color={listening ? color.blue : color.ink} />
               </Pressable>
-              <View style={{ flex: 1 }}><Button busy={busy} disabled={preview || !input.trim() || !!checkIn || monitorFlow?.step === 'confirm' || monitorFlow?.step === 'choose_goal'} onPress={() => void send(input)}>Send message</Button></View>
+              <View style={{ flex: 1 }}><Button busy={busy} disabled={preview || !input.trim() || !!checkIn || !!scheduleReview || monitorFlow?.step === 'confirm' || monitorFlow?.step === 'choose_goal'} onPress={() => void send(input)}>Send message</Button></View>
             </View>
             {!!dictationNotice && <Text accessibilityRole="text" style={s.small}>{dictationNotice}</Text>}
           </View>

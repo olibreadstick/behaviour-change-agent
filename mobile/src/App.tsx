@@ -170,7 +170,7 @@ function Welcome({
           ]}
         >
           <Image
-            source={coachImage}
+            source={Platform.OS === 'web' ? { uri: '/penguins/idle/penguin-blue-bow-red.gif' } : coachImage}
             style={{ width: 100, height: 100 }}
             accessibilityLabel="Your penguin coach"
             resizeMode="contain"

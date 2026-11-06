@@ -1,0 +1,51 @@
+{
+  "type": "object",
+  "properties": {
+    "current_goal": {
+      "type": "string"
+    },
+    "se_bct": {
+      "type": "string"
+    },
+    "enactment_status": {
+      "type": "string"
+    },
+    "barrier_context": {
+      "type": "string"
+    },
+    "primary_com_b": {
+      "type": "string"
+    },
+    "secondary_com_b": {
+      "type": "string"
+    },
+    "primary_tdf": {
+      "type": "string"
+    },
+    "secondary_tdf": {
+      "type": "string"
+    },
+    "previous_intervention_feedback": {
+      "type": "string"
+    },
+    "assessment_reason": {
+      "type": "string"
+    },
+    "needs_clarification": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "current_goal",
+    "se_bct",
+    "enactment_status",
+    "barrier_context",
+    "primary_com_b",
+    "secondary_com_b",
+    "primary_tdf",
+    "secondary_tdf",
+    "previous_intervention_feedback",
+    "assessment_reason",
+    "needs_clarification"
+  ]
+}

@@ -1,0 +1,153 @@
+{
+  "type": "object",
+  "properties": {
+    "selected_bct": {
+      "type": "string"
+    },
+    "belief": {
+      "type": "string"
+    },
+    "desire": {
+      "type": "string"
+    },
+    "intention": {
+      "type": "string"
+    },
+    "intervention_mode": {
+      "type": "string"
+    },
+    "workshop_resource": {
+      "type": "string"
+    },
+    "user_response": {
+      "type": "string"
+    },
+    "quick_reply_options": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "needs_clarification": {
+      "type": "boolean"
+    },
+    "goal_suggestion": {
+      "description": "Optional proposal for participant approval, never a command to persist a goal. Null if none.",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "operation": {
+              "type": "string",
+              "enum": [
+                "create",
+                "update"
+              ]
+            },
+            "goal": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "goal_id": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "goal"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "plan_suggestion": {
+      "description": "Optional action-plan proposal for explicit participant confirmation. Null when there is no agreed plan or revision.",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "operation": {
+              "type": "string",
+              "enum": [
+                "create",
+                "update"
+              ]
+            },
+            "goal_id": {
+              "type": "string"
+            },
+            "plan_id": {
+              "type": "string"
+            },
+            "what": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "when": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "where": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "how": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "barrier": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "alternative": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "cue": {
+              "type": "string",
+              "maxLength": 500
+            },
+            "reason": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "operation",
+            "goal_id",
+            "what"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "reaction_emoji": {
+      "type": "string",
+      "enum": [
+        "",
+        "💛",
+        "🫶",
+        "💙",
+        "🌱"
+      ]
+    }
+  },
+  "required": [
+    "selected_bct",
+    "belief",
+    "desire",
+    "intention",
+    "intervention_mode",
+    "workshop_resource",
+    "user_response",
+    "quick_reply_options",
+    "needs_clarification"
+  ]
+}

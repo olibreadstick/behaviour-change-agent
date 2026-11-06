@@ -83,9 +83,26 @@ export function Learn({ onGuide, onResume, onCoach }: { onGuide: GuideStarter; o
               <Text style={s.body}>{guide.subtitle}</Text>
             </View>
           </View>
-          <Pressable accessibilityRole="button" accessibilityLabel={`Read ${guide.title}`} onPress={() => { setReading(guide.id); track('learning_content_opened', { guide: guide.id }); }} style={{ paddingVertical: 8, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Text style={[s.body, { color: color.blue }]}>Read guide</Text>
-            <Ionicons name="chevron-forward" size={22} color={color.muted}/>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Read ${guide.title}`}
+            onPress={() => { setReading(guide.id); track('learning_content_opened', { guide: guide.id }); }}
+            style={({ pressed }) => [s.button, s.secondary, {
+              flexDirection: 'row',
+              justifyContent: 'space-between',
+              opacity: pressed ? 0.8 : 1,
+            }]}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <Ionicons name="book-outline" size={20} color="#147EA0" />
+              <Text style={[s.body, {
+                color: '#137393',
+                fontWeight: '600'
+              }]}>
+                Read guide
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color="#147EA0" />
           </Pressable>
         </View>)}
       </View>

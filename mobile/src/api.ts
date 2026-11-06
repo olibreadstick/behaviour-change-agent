@@ -1,6 +1,8 @@
 import type { AppState, CoachContext, CoachResponse, CommunityPost, GuideEvent, GuideResponse, UsageEvent } from './types';
 export const API_URL = (process.env.EXPO_PUBLIC_API_URL || '').replace(/\/$/, '');
-export const COACH_URL = process.env.EXPO_PUBLIC_N8N_COACH_URL || '';
+// Disable legacy n8n guide-suggestions calls while local Gemini coaching is selected.
+export const GEMINI_COACH_URL = (process.env.EXPO_PUBLIC_GEMINI_COACH_URL || '').replace(/\/$/, '');
+export const COACH_URL = GEMINI_COACH_URL ? '' : (process.env.EXPO_PUBLIC_N8N_COACH_URL || '');
 export const configured = Boolean(API_URL);
 export async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
@@ -40,8 +42,9 @@ export async function saveRemote(id: string, state: AppState) {
 }
 export const postEvent = (event: UsageEvent) => request(`${API_URL}/api/cloud/usage`, { method: 'POST', body: JSON.stringify(event) });
 export async function sendCoach(sessionId: string, chatInput: string, appContext: CoachContext): Promise<CoachResponse> {
-  if (!COACH_URL) throw new Error('Live coaching will be available once the mobile workflow is connected.');
-  const result = await request<CoachResponse>(COACH_URL, { method: 'POST', body: JSON.stringify({ action: 'sendMessage', sessionId, chatInput, app_context: appContext }) });
+  const endpoint = GEMINI_COACH_URL || COACH_URL;
+  if (!endpoint) throw new Error('Live coaching has not been configured.');
+  const result = await request<CoachResponse>(endpoint, { method: 'POST', body: JSON.stringify({ action: 'sendMessage', sessionId, chatInput, app_context: appContext }) });
   if (!result || typeof result.chat_response !== 'string' || !result.chat_response.trim()) throw new Error('The coach returned an empty response. Please try again.');
   return result;
 }

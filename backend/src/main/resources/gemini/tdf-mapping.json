@@ -1,0 +1,80 @@
+{
+  "knowledge": [
+    "instruction_on_how_to_perform_behaviour",
+    "information_about_antecedents",
+    "information_about_consequences",
+    "demonstration_of_behaviour",
+    "feedback_on_behaviour"
+  ],
+  "skills": [
+    "instruction_on_how_to_perform_behaviour",
+    "demonstration_of_behaviour",
+    "behavioural_rehearsal_practice",
+    "feedback_on_behaviour",
+    "graded_tasks"
+  ],
+  "beliefs_about_capabilities": [
+    "verbal_persuasion_about_capability",
+    "focus_on_past_success",
+    "graded_tasks",
+    "behavioural_rehearsal_practice",
+    "feedback_on_behaviour"
+  ],
+  "beliefs_about_consequences": [
+    "information_about_consequences",
+    "pros_and_cons",
+    "salience_of_consequences",
+    "credible_source"
+  ],
+  "intentions": [
+    "goal_setting",
+    "commitment",
+    "action_planning",
+    "review_behaviour_goals"
+  ],
+  "goals": [
+    "goal_setting",
+    "review_goals",
+    "problem_solving",
+    "action_planning",
+    "discrepancy_between_current_behaviour_and_goal"
+  ],
+  "memory_attention_decision_processes": [
+    "prompts_cues",
+    "action_planning",
+    "adding_objects_to_environment",
+    "restructuring_physical_environment"
+  ],
+  "behavioural_regulation": [
+    "self_monitoring_of_behaviour",
+    "feedback_on_behaviour",
+    "problem_solving",
+    "action_planning",
+    "review_behaviour_goals"
+  ],
+  "reinforcement": [
+    "self_reward",
+    "social_reward",
+    "incentive",
+    "behaviour_substitution",
+    "feedback_on_behaviour"
+  ],
+  "emotion": [
+    "reduce_negative_emotions",
+    "problem_solving_coping_strategies",
+    "feedback_on_behaviour"
+  ],
+  "environmental_context_resources": [
+    "restructuring_physical_environment",
+    "adding_objects_to_environment",
+    "problem_solving",
+    "prompts_cues"
+  ],
+  "social_influences": [
+    "social_support_practical",
+    "social_support_emotional",
+    "social_support_unspecified",
+    "restructuring_social_environment",
+    "modelling_demonstration"
+  ]
+}
