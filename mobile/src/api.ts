@@ -4,25 +4,69 @@ export const API_URL = (process.env.EXPO_PUBLIC_API_URL || '').replace(/\/$/, ''
 export const GEMINI_COACH_URL = (process.env.EXPO_PUBLIC_GEMINI_COACH_URL || '').replace(/\/$/, '');
 export const COACH_URL = GEMINI_COACH_URL ? '' : (process.env.EXPO_PUBLIC_N8N_COACH_URL || '');
 export const configured = Boolean(API_URL);
+// Coaching tokens are held for the current browser session, never embedded in URLs.
+const COACH_TOKEN_KEY = 'daily_coach_authenticated_token';
+let memoryCoachToken = '';
+export function readCoachToken(): string {
+  if (typeof window !== 'undefined') {
+    try { return window.sessionStorage.getItem(COACH_TOKEN_KEY) || memoryCoachToken; } catch { /* Browser storage may be blocked. */ }
+  }
+  return memoryCoachToken;
+}
+export function clearCoachToken(): void {
+  memoryCoachToken = '';
+  if (typeof window !== 'undefined') {
+    try { window.sessionStorage.removeItem(COACH_TOKEN_KEY); } catch { /* Ignore blocked storage. */ }
+  }
+}
+function saveCoachToken(token: string): void {
+  memoryCoachToken = token;
+  if (typeof window !== 'undefined') {
+    try { window.sessionStorage.setItem(COACH_TOKEN_KEY, token); } catch { /* Current tab still works. */ }
+  }
+}
+function isGeminiEndpoint(url: string): boolean {
+  if (!GEMINI_COACH_URL) return false;
+  const base = GEMINI_COACH_URL.replace(/\/message\/?$/, '');
+  return url === GEMINI_COACH_URL || url === `${base}/guide-suggestions`;
+}
 export async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 90000);
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal, headers: { 'Content-Type': 'application/json', ...init.headers } });
+    const isCoachRequest = isGeminiEndpoint(url);
+    const sessionToken = isCoachRequest ? readCoachToken() : '';
+    if (isCoachRequest && !sessionToken) {
+      throw new Error('Please sign out and sign in again to use Pip securely.');
+    }
+    const response = await fetch(url, { ...init, signal: controller.signal, headers: {
+      'Content-Type': 'application/json', ...init.headers,
+      ...(isCoachRequest ? { Authorization: `Bearer ${sessionToken}` } : {}),
+    } });
     const raw = await response.text();
     let data: any;
     try { data = raw ? JSON.parse(raw) : null; } catch { throw new Error('The service returned an unexpected response. Please try again.'); }
-    if (!response.ok) throw new Error(data?.error || `The service could not complete this request (${response.status}).`);
+    if (!response.ok) throw new Error(
+      isCoachRequest && response.status === 401
+        ? 'Your coaching session expired. Please sign out and sign in again.'
+        : data?.error || `The service could not complete this request (${response.status}).`
+    );
     return data as T;
   } catch (e) {
     if (e instanceof Error && e.name === 'AbortError') throw new Error('The service took too long to respond. Please try again.');
     throw e;
   } finally { clearTimeout(timeout); }
 }
-export function authenticate(username: string, password: string, signup: boolean) {
+export async function authenticate(username: string, password: string, signup: boolean) {
   if (!configured) throw new Error('The app’s services have not been configured yet.');
-  return request<{ participantId: string }>(`${API_URL}/api/auth/participant/${signup ? 'signup' : 'login'}`, {
-    method: 'POST', body: JSON.stringify({ username, password }) });
+  const result = await request<{ participantId: string; sessionToken?: string }>(
+    `${API_URL}/api/auth/participant/${signup ? 'signup' : 'login'}`,
+    { method: 'POST', body: JSON.stringify({ username, password }) }
+  );
+  // Clear an earlier account's token only after a successful login.
+  clearCoachToken();
+  if (result.sessionToken) saveCoachToken(result.sessionToken);
+  return result;
 }
 export type RemoteRecord = { key: string; payload: string; updatedAt: string };
 export const loadRemote = (id: string) => request<RemoteRecord[]>(`${API_URL}/api/cloud/participants/${encodeURIComponent(id)}`);

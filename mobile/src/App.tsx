@@ -17,7 +17,7 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-import { authenticate } from './api';
+import { authenticate, clearCoachToken, readCoachToken } from './api';
 import { AppStore, useAppStore, uuid } from './store';
 import { coachContext } from './domain';
 import { guideResponse } from './guide-engine.cjs';
@@ -56,7 +56,8 @@ export default function App() {
 
     if (
       savedSession?.participantId === 'mobile-preview' ||
-      savedSession?.preview
+      savedSession?.preview ||
+      (savedSession && !readCoachToken())
     ) {
       return null;
     }
@@ -92,7 +93,7 @@ export default function App() {
           >
             <Shell
               {...session}
-              onLogout={() => setSession(null)}
+              onLogout={() => { clearCoachToken(); setSession(null); }}
             />
           </AppStore>
         ) : (
