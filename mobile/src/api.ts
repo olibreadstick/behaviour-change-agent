@@ -35,13 +35,16 @@ export async function request<T>(url: string, init: RequestInit = {}): Promise<T
   const timeout = setTimeout(() => controller.abort(), 90000);
   try {
     const isCoachRequest = isGeminiEndpoint(url);
-    const sessionToken = isCoachRequest ? readCoachToken() : '';
-    if (isCoachRequest && !sessionToken) {
+    const secureBackendRequest = Boolean(API_URL) && url.startsWith(`${API_URL}/api/`) &&
+      !url.startsWith(`${API_URL}/api/auth/`);
+    const needsToken = isCoachRequest || secureBackendRequest;
+    const sessionToken = needsToken ? readCoachToken() : '';
+    if (needsToken && !sessionToken) {
       throw new Error('Please sign out and sign in again to use Pip securely.');
     }
     const response = await fetch(url, { ...init, signal: controller.signal, headers: {
       'Content-Type': 'application/json', ...init.headers,
-      ...(isCoachRequest ? { Authorization: `Bearer ${sessionToken}` } : {}),
+      ...(needsToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
     } });
     const raw = await response.text();
     let data: any;
@@ -73,7 +76,11 @@ export const loadRemote = (id: string) => request<RemoteRecord[]>(`${API_URL}/ap
 export async function loadLegacyProfile(id: string): Promise<{ displayName?: string } | null> {
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 15000);
   try {
-    const response = await fetch(`${API_URL}/api/participant-profiles/${encodeURIComponent(id)}`, { signal: controller.signal });
+    const token = readCoachToken();
+    if (!token) throw new Error('Please sign in again to load your profile securely.');
+    const response = await fetch(`${API_URL}/api/participant-profiles/${encodeURIComponent(id)}`, {
+      signal: controller.signal, headers: { Authorization: `Bearer ${token}` }
+    });
     if (response.status === 404) return null;
     if (!response.ok) throw new Error('Your previous profile could not be loaded.');
     return await response.json();

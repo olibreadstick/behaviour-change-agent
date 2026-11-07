@@ -67,6 +67,7 @@ export const loginParticipant = (
 
 interface AdminAuthResponse {
   role: "admin";
+  sessionToken: string;
 }
 
 export const loginAdmin = async (
@@ -115,6 +116,7 @@ export const changeAdminPassword = async (
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        Authorization: `Bearer ${JSON.parse(sessionStorage.getItem('support_agent_auth_session') || 'null')?.sessionToken || ''}`,
       },
       body: JSON.stringify({
         username,

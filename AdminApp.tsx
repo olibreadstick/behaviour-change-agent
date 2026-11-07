@@ -8,7 +8,7 @@ const accounts = (): Array<{ id: string; createdAt: number }> => {
   try { const data = JSON.parse(localStorage.getItem('uc_accounts') || '[]'); return Array.isArray(data) ? data.filter(a => typeof a?.id === 'string') : []; } catch { return []; }
 };
 const savedAdmin = (): string | null => {
-  try { const data = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null'); return data?.role === 'admin' ? data.username || 'admin' : null; } catch { return null; }
+  try { const data = JSON.parse(sessionStorage.getItem(SESSION_KEY) || 'null'); return data?.role === 'admin' && typeof data.sessionToken === 'string' && data.sessionToken ? data.username || 'admin' : null; } catch { return null; }
 };
 export default function AdminApp() {
   const [admin, setAdmin] = useState(savedAdmin);
@@ -25,7 +25,7 @@ export default function AdminApp() {
   }, [admin]);
   async function login(event: React.FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
-    try { await loginAdmin(username.trim(), password); sessionStorage.setItem(SESSION_KEY, JSON.stringify({ role: 'admin', username: username.trim() })); setAdmin(username.trim()); setPassword(''); }
+    try { const session = await loginAdmin(username.trim(), password); if (!session.sessionToken) throw new Error('Administrator session token missing'); sessionStorage.setItem(SESSION_KEY, JSON.stringify({ role: 'admin', username: username.trim(), sessionToken: session.sessionToken })); setAdmin(username.trim()); setPassword(''); }
     catch (e) { setError(e instanceof Error ? e.message : 'Unable to sign in.'); } finally { setBusy(false); }
   }
   async function updatePassword(event: React.FormEvent) {

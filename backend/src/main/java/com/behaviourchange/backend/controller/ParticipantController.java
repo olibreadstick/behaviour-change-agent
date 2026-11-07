@@ -3,6 +3,10 @@ package com.behaviourchange.backend.controller;
 import com.behaviourchange.backend.dto.ParticipantResponse;
 import com.behaviourchange.backend.model.Participant;
 import com.behaviourchange.backend.service.ParticipantService;
+import com.behaviourchange.backend.security.CoachSessionService;
+import com.behaviourchange.backend.security.AdminSessionService;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 import org.springframework.web.bind.annotation.*;
 
@@ -11,15 +15,21 @@ import org.springframework.web.bind.annotation.*;
 public class ParticipantController {
 
     private final ParticipantService participantService;
+    private final CoachSessionService participantSessions;
+    private final AdminSessionService adminSessions;
 
     public ParticipantController(
-            ParticipantService participantService) {
+            ParticipantService participantService, CoachSessionService participantSessions, AdminSessionService adminSessions) {
 
         this.participantService = participantService;
+        this.participantSessions = participantSessions;
+        this.adminSessions = adminSessions;
     }
 
     @GetMapping
-    public List<ParticipantResponse> getParticipants() {
+    public List<ParticipantResponse> getParticipants(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        adminSessions.requireAdmin(authorization);
 
         return participantService
                 .getAllParticipants()
@@ -30,7 +40,13 @@ public class ParticipantController {
 
     @GetMapping("/{participantId}")
     public ParticipantResponse getParticipant(
-            @PathVariable String participantId) {
+            @PathVariable String participantId,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+        if (authorization != null && authorization.startsWith("Bearer admin.")) {
+            adminSessions.requireAdmin(authorization);
+        } else if (!participantId.equals(participantSessions.requireParticipant(authorization))) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cannot access another participant");
+        }
 
         Participant participant =
                 participantService

@@ -3,6 +3,7 @@ package com.behaviourchange.backend.controller;
 import com.behaviourchange.backend.dto.AdminPasswordChangeRequest;
 import com.behaviourchange.backend.dto.LoginRequest;
 import com.behaviourchange.backend.service.AdminAuthService;
+import com.behaviourchange.backend.security.AdminSessionService;
 import java.util.Map;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -12,11 +13,13 @@ import org.springframework.web.bind.annotation.*;
 public class AdminAuthController {
 
     private final AdminAuthService adminAuthService;
+    private final AdminSessionService adminSessions;
 
     public AdminAuthController(
-            AdminAuthService adminAuthService) {
+            AdminAuthService adminAuthService, AdminSessionService adminSessions) {
 
         this.adminAuthService = adminAuthService;
+        this.adminSessions = adminSessions;
     }
 
     @PostMapping("/login")
@@ -29,7 +32,8 @@ public class AdminAuthController {
             return ResponseEntity.ok(
                     Map.of(
                             "role",
-                            "admin"
+                            "admin",
+                            "sessionToken", adminSessions.issue(request.getUsername().trim())
                     )
             );
 
@@ -48,7 +52,9 @@ public class AdminAuthController {
 
     @PostMapping("/change-password")
 public ResponseEntity<?> changePassword(
-        @RequestBody AdminPasswordChangeRequest request) {
+        @RequestBody AdminPasswordChangeRequest request,
+        @RequestHeader(value = "Authorization", required = false) String authorization) {
+    adminSessions.requireAdmin(authorization);
 
     try {
 

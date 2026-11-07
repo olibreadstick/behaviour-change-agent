@@ -23,6 +23,7 @@ const KNOWN_USAGE_KEYS = Array.from(
 interface AuthSession {
   role: "participant" | "admin";
   userId?: string;
+  sessionToken?: string;
 }
 
 interface ParticipantRemoteRecord {
@@ -80,6 +81,7 @@ const fetchJson = async <T>(
       ...init,
       headers: {
         "Content-Type": "application/json",
+        ...(getAuthSession()?.sessionToken ? { Authorization: `Bearer ${getAuthSession()!.sessionToken}` } : {}),
         ...(init?.headers || {}),
       },
     }
